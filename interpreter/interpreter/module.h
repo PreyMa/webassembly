@@ -4,8 +4,7 @@
 #include <optional>
 #include <variant>
 
-#include "buffer.h"
-#include "enum.h"
+#include "instruction.h"
 
 namespace WASM {
 
@@ -128,6 +127,19 @@ namespace WASM {
 		const char* name() const;
 	};
 
+	class Expression {
+	public:
+		Expression(BufferSlice b, std::vector<Instruction> i)
+			: mBytes{ b }, mInstructions{ std::move(i) } {}
+
+		void printBytes(std::ostream&) const;
+		void print(std::ostream&) const;
+
+	private:
+		BufferSlice mBytes;
+		std::vector<Instruction> mInstructions;
+	};
+
 	class FunctionType {
 	public:
 		FunctionType(std::vector<ValType> p, std::vector<ValType> r)
@@ -179,15 +191,15 @@ namespace WASM {
 
 	class Global {
 	public:
-		Global(ValType t, bool m, BufferSlice c)
-			: type{ t }, isMutable{ m }, initExpression{ c } {}
+		Global(ValType t, bool m, Expression c)
+			: type{ t }, isMutable{ m }, initExpression{ std::move(c) } {}
 
-		void print(std::ostream& out);
+		void print(std::ostream& out) const;
 
 	private:
 		ValType type;
 		bool isMutable;
-		BufferSlice initExpression;
+		Expression initExpression;
 	};
 
 	class Export {
@@ -208,16 +220,16 @@ namespace WASM {
 		Element( ElementMode m, ValType r, std::vector<u32> f )
 			: mode{ m }, refType{r}, initExpressions { std::move(f) } {}
 
-		Element(ElementMode m, ValType r, u32 ti, BufferSlice to, std::vector<u32> f)
-			: mode{ m }, refType{ r }, tablePosition{ {ti, to} }, initExpressions{ std::move(f) } {}
+		Element(ElementMode m, ValType r, u32 ti, Expression to, std::vector<u32> f)
+			: mode{ m }, refType{ r }, tablePosition{ {ti, std::move(to)} }, initExpressions{ std::move(f) } {}
 
-		Element(ElementMode m, ValType r, std::vector<BufferSlice> e)
+		Element(ElementMode m, ValType r, std::vector<Expression> e)
 			: mode{ m }, refType{ r }, initExpressions{ std::move(e) } {}
 
-		Element(ElementMode m, ValType r, u32 ti, BufferSlice to, std::vector<BufferSlice> e)
-			: mode{ m }, refType{ r }, tablePosition{ {ti, to} }, initExpressions{ std::move(e) } {}
+		Element(ElementMode m, ValType r, u32 ti, Expression to, std::vector<Expression> e)
+			: mode{ m }, refType{ r }, tablePosition{ {ti, std::move(to)} }, initExpressions{ std::move(e) } {}
 
-		void print(std::ostream& out);
+		void print(std::ostream& out) const;
 
 	private:
 		u32 tableIndex() const {
@@ -226,13 +238,13 @@ namespace WASM {
 
 		struct TablePosition {
 			u32 tableIndex;
-			BufferSlice tableOffset;
+			Expression tableOffset;
 		};
 
 		ElementMode mode;
 		ValType refType;
 		std::optional<TablePosition> tablePosition;
-		std::variant<std::vector<u32>, std::vector<BufferSlice>> initExpressions;
+		std::variant<std::vector<u32>, std::vector<Expression>> initExpressions;
 	};
 
 	class FunctionCode {
@@ -242,14 +254,14 @@ namespace WASM {
 			ValType type;
 		};
 
-		FunctionCode(BufferSlice c, std::vector<CompressedLocalTypes> l)
+		FunctionCode(Expression c, std::vector<CompressedLocalTypes> l)
 			: code{ std::move(c) }, compressedLocalTypes{ std::move(l) } {}
 
-		void print(std::ostream& out);
-		void printBody(std::ostream& out);
+		void print(std::ostream& out) const;
+		void printBody(std::ostream& out) const;
 
 	private:
-		BufferSlice code;
+		Expression code;
 		std::vector<CompressedLocalTypes> compressedLocalTypes;
 	};
 
@@ -301,12 +313,12 @@ namespace WASM {
 		MemoryType parseMemoryType();
 		Global parseGlobal();
 		Limits parseLimits();
-		BufferSlice parseInitExpression();
+		Expression parseInitExpression();
 		Export parseExport();
 		Element parseElement();
 		FunctionCode parseFunctionCode();
 
-		std::vector<BufferSlice> parseInitExpressionVector();
+		std::vector<Expression> parseInitExpressionVector();
 		std::vector<u32> parseU32Vector();
 
 		void throwParsingError(const char*) const;

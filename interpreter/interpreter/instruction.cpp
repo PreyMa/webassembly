@@ -4,6 +4,7 @@
 
 #include "instruction.h"
 #include "module.h"
+#include "error.h"
 
 using namespace WASM;
 
@@ -761,7 +762,7 @@ Instruction Instruction::parseSelectVectorInstruction(BufferIterator& it)
 	return { InstructionType::SelectFrom, position };
 }
 
-void Instruction::printBranchTableInstruction(std::ostream& out, const BufferSlice& data)
+void Instruction::printBranchTableInstruction(std::ostream& out, const BufferSlice& data) const
 {
 	// FIXME: If buffer iterator was read only this ugly const cast could go away
 	assert(type == InstructionType::BranchTable);
@@ -776,7 +777,7 @@ void Instruction::printBranchTableInstruction(std::ostream& out, const BufferSli
 	out << " ]";
 }
 
-void Instruction::printSelectVectorInstruction(std::ostream& out, const BufferSlice& data)
+void Instruction::printSelectVectorInstruction(std::ostream& out, const BufferSlice& data) const
 {
 	// FIXME: If buffer iterator was read only this ugly const cast could go away
 	assert(type == InstructionType::SelectFrom);
@@ -810,7 +811,7 @@ void WASM::Instruction::printBlockTypeInstruction(std::ostream& out) const
 }
 
 
-void Instruction::print(std::ostream& out, const BufferSlice& data)
+void Instruction::print(std::ostream& out, const BufferSlice& data) const
 {
 	using IT = InstructionType;
 	switch (type) {

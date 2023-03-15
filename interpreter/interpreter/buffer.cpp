@@ -96,6 +96,17 @@ std::string BufferSlice::toString()
 	return std::string{ (char*)mBegin, mLength };
 }
 
+void WASM::BufferSlice::print(std::ostream& out) const
+{
+	out << "[" << std::hex;
+
+	for (auto byte : *this) {
+		out << " " << (byte <= 0xF ? "0" : "") << (int)byte;
+	}
+
+	out << " ]" << std::dec;
+}
+
 u32 BufferIterator::remaining() const
 {
 	return mEndPosition - mPosition;

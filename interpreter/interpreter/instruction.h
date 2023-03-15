@@ -266,7 +266,9 @@ namespace WASM {
 
 		static Instruction fromWASMBytes(BufferIterator&);
 
-		void print(std::ostream&, const BufferSlice&);
+		void print(std::ostream&, const BufferSlice&) const;
+
+		bool operator==(InstructionType t) const { return type == t; }
 
 	private:
 		static Instruction parseBlockTypeInstruction(InstructionType, BufferIterator&);
@@ -274,8 +276,8 @@ namespace WASM {
 		static Instruction parseSelectVectorInstruction(BufferIterator&);
 
 		void printBlockTypeInstruction(std::ostream&) const;
-		void printBranchTableInstruction(std::ostream&, const BufferSlice&);
-		void printSelectVectorInstruction(std::ostream&, const BufferSlice&);
+		void printBranchTableInstruction(std::ostream&, const BufferSlice&) const;
+		void printSelectVectorInstruction(std::ostream&, const BufferSlice&) const;
 
 		InstructionType type;
 

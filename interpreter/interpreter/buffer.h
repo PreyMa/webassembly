@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <string>
+#include <ostream>
 #include <cassert>
 
 #include "util.h"
@@ -108,6 +109,7 @@ namespace WASM {
 
 
 		std::string toString();
+		void print(std::ostream&) const;
 
 	private:
 		u8* mBegin;

@@ -7,16 +7,6 @@
 
 using namespace WASM;
 
-static void printInitExpression(std::ostream& out, const BufferSlice& initExpression) {
-	out << "[" << std::hex;
-
-	for (auto byte : initExpression) {
-		out << " " << (byte <= 0xF ? "0" : "") << (int)byte;
-	}
-
-	out << " ]" << std::dec;
-}
-
 Module ModuleParser::parse(Buffer buffer, std::string modulePath)
 {
 	path = std::move(modulePath);
@@ -30,8 +20,9 @@ Module ModuleParser::parse(Buffer buffer, std::string modulePath)
 	}
 
 	for (auto& f : functionCodes) {
-		std::cout << "=> Function:\n";
+		std::cout << "=> Function:";
 		f.printBody(std::cout);
+		std::cout << std::endl;
 	}
 
 	return Module{ std::move(data), std::move(path) };
@@ -447,24 +438,24 @@ Limits ModuleParser::parseLimits()
 	}
 }
 
-BufferSlice ModuleParser::parseInitExpression()
+Expression ModuleParser::parseInitExpression()
 {
-	// FIXME: This should check for well formed-ness of open and closed blocks
-	// instead of stopping at the first 0x0B that is found
+	std::vector<Instruction> instructions;
 	auto beginPos = it;
 	while (hasNext()) {
-		if (nextU8() == 0x0B) {
-			return sliceFrom(beginPos);
+		auto& ins = instructions.emplace_back(Instruction::fromWASMBytes(it));
+		if (ins == InstructionType::End) {
+			return { sliceFrom(beginPos), std::move(instructions) };
 		}
 	}
 
 	throwParsingError("Unexpected end of module while parsing init expression");
 }
 
-std::vector<BufferSlice> ModuleParser::parseInitExpressionVector()
+std::vector<Expression> ModuleParser::parseInitExpressionVector()
 {
 	auto numExp = nextU32();
-	std::vector<BufferSlice> exps;
+	std::vector<Expression> exps;
 	exps.reserve(numExp);
 
 	for (u32 i = 0; i != numExp; i++) {
@@ -615,7 +606,13 @@ FunctionCode ModuleParser::parseFunctionCode()
 		throwParsingError("Invalid funcion code item. Expected 0x0B at end of expression");
 	}
 
-	return { codeSlice, std::move(locals) };
+	std::vector<Instruction> instructions;
+	auto codeIt = codeSlice.iterator();
+	while (codeIt.hasNext()) {
+		instructions.emplace_back(Instruction::fromWASMBytes(codeIt));
+	}
+
+	return { Expression{codeSlice, instructions}, std::move(locals) };
 }
 
 const char* SectionType::name() const
@@ -729,10 +726,10 @@ void TableType::print(std::ostream& out)
 	limits.print(out);
 }
 
-void Global::print(std::ostream& out)
+void Global::print(std::ostream& out) const
 {
 	out << "Global: " << (isMutable ? "mutable " : "const ") << type.name() << " ";
-	printInitExpression(out, initExpression);
+	initExpression.printBytes(out);
 }
 
 const char* ExportType::name() const
@@ -761,12 +758,12 @@ const char* ElementMode::name() const
 	}
 }
 
-void Element::print(std::ostream& out)
+void Element::print(std::ostream& out) const
 {
 	out << "Element: " << mode.name() << " table: " << tableIndex();
 	if (tablePosition) {
 		out << " offset: ";
-		printInitExpression(out, tablePosition->tableOffset);
+		tablePosition->tableOffset.printBytes(out);
 	}
 
 	if (initExpressions.index() == 0) {
@@ -777,12 +774,12 @@ void Element::print(std::ostream& out)
 	else {
 		for (auto& expr : std::get<1>(initExpressions)) {
 			out << std::endl << "    - expr ";
-			printInitExpression(out, expr);
+			expr.printBytes(out);
 		}
 	}
 }
 
-void FunctionCode::print(std::ostream& out)
+void FunctionCode::print(std::ostream& out) const
 {
 	out << "Function code: ";
 
@@ -791,18 +788,12 @@ void FunctionCode::print(std::ostream& out)
 	}
 
 	out << std::endl << "    Code: ";
-	printInitExpression(out, code);
+	code.printBytes(out);
 }
 
-void FunctionCode::printBody(std::ostream& out)
+void FunctionCode::printBody(std::ostream& out) const
 {
-	auto it = code.iterator();
-	while (it.hasNext()) {
-		auto instruction= Instruction::fromWASMBytes(it);
-		out << "  - ";
-		instruction.print(out, code);
-		out << std::endl;
-	}
+	code.print(out);
 }
 
 const char* WASM::NameSubsectionType::name() const
@@ -820,3 +811,17 @@ const char* WASM::NameSubsectionType::name() const
 		default: return "<unkown name subsection type>";
 	}
 }
+
+void Expression::printBytes(std::ostream& out) const
+{
+	mBytes.print(out);
+}
+
+void Expression::print(std::ostream& out) const
+{
+	for (auto& ins : mInstructions) {
+		out << "\n  - ";
+		ins.print(out, mBytes);
+	}
+}
+
