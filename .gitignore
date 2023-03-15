@@ -1,0 +1,3 @@
+assemblyscript/*/node_modules/*
+interpreter/.vs/*
+interpreter/out
