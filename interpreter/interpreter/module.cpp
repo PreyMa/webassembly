@@ -7,7 +7,7 @@
 
 using namespace WASM;
 
-Module ModuleParser::parse(Buffer buffer, std::string modulePath)
+void ModuleParser::parse(Buffer buffer, std::string modulePath)
 {
 	path = std::move(modulePath);
 	data = std::move(buffer);
@@ -24,7 +24,10 @@ Module ModuleParser::parse(Buffer buffer, std::string modulePath)
 		f.printBody(std::cout);
 		std::cout << std::endl;
 	}
+}
 
+Module ModuleParser::toModule()
+{
 	return Module{ std::move(data), std::move(path) };
 }
 
@@ -478,7 +481,7 @@ std::vector<u32> ModuleParser::parseU32Vector()
 	return ints;
 }
 
-void WASM::ModuleParser::throwParsingError(const char* msg) const
+void ModuleParser::throwParsingError(const char* msg) const
 {
 	throw ParsingError{ static_cast<u64>(it.positionPointer() - data.begin()), path, std::string{msg} };
 }
@@ -688,7 +691,12 @@ const char* ValType::name() const
 	}
 }
 
-void FunctionType::print(std::ostream& out)
+bool FunctionType::takesVoidReturnsVoid() const
+{
+	return parameters.empty() && results.empty();
+}
+
+void FunctionType::print(std::ostream& out) const
 {
 	out << "Function: ";
 
@@ -711,7 +719,7 @@ void FunctionType::print(std::ostream& out)
 	}
 }
 
-void Limits::print(std::ostream& out)
+void Limits::print(std::ostream& out) const
 {
 	out << '(' << min;
 	if (max.has_value()) {
@@ -720,16 +728,29 @@ void Limits::print(std::ostream& out)
 	out << ')';
 }
 
-void TableType::print(std::ostream& out)
+bool Limits::isValid(u32 range) const
 {
-	out << "Table: " << elementReferenceType.name() << ' ';
-	limits.print(out);
+	if (min > range) {
+		return false;
+	}
+
+	if (max.has_value()) {
+		return *max <= range && min <= *max;
+	}
+
+	return true;
+}
+
+void TableType::print(std::ostream& out) const
+{
+	out << "Table: " << mElementReferenceType.name() << ' ';
+	mLimits.print(out);
 }
 
 void Global::print(std::ostream& out) const
 {
-	out << "Global: " << (isMutable ? "mutable " : "const ") << type.name() << " ";
-	initExpression.printBytes(out);
+	out << "Global: " << (mIsMutable ? "mutable " : "const ") << mType.name() << " ";
+	mInitExpression.printBytes(out);
 }
 
 const char* ExportType::name() const
@@ -743,9 +764,21 @@ const char* ExportType::name() const
 	}
 }
 
-void Export::print(std::ostream& out)
+bool Export::isValid(u32 numFunctions, u32 numTables, u32 numMemories, u32 numGlobals) const
 {
-	out << "Export: '" << name << "' " << exportType.name() << " " << index;
+	switch (mExportType) {
+	case ExportType::FunctionIndex: return mIndex < numFunctions;
+	case ExportType::TableIndex: return mIndex < numTables;
+	case ExportType::MemoryIndex: return mIndex < numTables;
+	case ExportType::GlobalIndex: return mIndex < numGlobals;
+	default:
+		assert(false);
+	}
+}
+
+void Export::print(std::ostream& out) const
+{
+	out << "Export: '" << mName << "' " << mExportType.name() << " " << mIndex;
 }
 
 const char* ElementMode::name() const
@@ -758,21 +791,30 @@ const char* ElementMode::name() const
 	}
 }
 
-void Element::print(std::ostream& out) const
+Nullable<const std::vector<Expression>> Element::initExpressions() const
 {
-	out << "Element: " << mode.name() << " table: " << tableIndex();
-	if (tablePosition) {
-		out << " offset: ";
-		tablePosition->tableOffset.printBytes(out);
+	if (mInitExpressions.index() == 1) {
+		return { std::get<1>(mInitExpressions) };
 	}
 
-	if (initExpressions.index() == 0) {
-		for (auto func : std::get<0>(initExpressions)) {
+	return {};
+}
+
+void Element::print(std::ostream& out) const
+{
+	out << "Element: " << refType.name() << " " << mMode.name() << " table: " << tableIndex();
+	if (mTablePosition) {
+		out << " offset: ";
+		mTablePosition->tableOffset.printBytes(out);
+	}
+
+	if (mInitExpressions.index() == 0) {
+		for (auto func : std::get<0>(mInitExpressions)) {
 			out << std::endl << "    - func idx " << func;
 		}
 	}
 	else {
-		for (auto& expr : std::get<1>(initExpressions)) {
+		for (auto& expr : std::get<1>(mInitExpressions)) {
 			out << std::endl << "    - expr ";
 			expr.printBytes(out);
 		}
@@ -796,7 +838,7 @@ void FunctionCode::printBody(std::ostream& out) const
 	code.print(out);
 }
 
-const char* WASM::NameSubsectionType::name() const
+const char* NameSubsectionType::name() const
 {
 	switch (value) {
 		case ModuleName: return "ModuleName";
@@ -825,3 +867,220 @@ void Expression::print(std::ostream& out) const
 	}
 }
 
+void ModuleValidator::validate(const ParsingState& parser)
+{
+	parsingState = &parser;
+
+	// Under module context C
+	// TODO: Combine the lists of module local types with imported types -> imported types go before
+	setupConcatContext();
+
+	if (s().functions.size() != s().functionCodes.size()) {
+		throwValidationError("Parsed different number of function declarations than function codes");
+	}
+
+	for (u32 i = 0; i != s().functions.size(); i++) {
+		validateFunction(i);
+	}
+
+	if (s().startFunction.has_value()) {
+		validateStartFunction(*s().startFunction);
+	}
+
+	// TODO: Validate imports
+
+	for (auto& exp : s().exports) {
+		validateExport(exp);
+	}
+
+	// Under context C'
+
+	for (auto& table : s().tableTypes) {
+		validateTableType(table);
+	}
+
+	for (auto& mem : s().memoryTypes) {
+		validateMemoryType(mem);
+	}
+
+	if (s().memoryTypes.size() > 1) {
+		throwValidationError("More than one memory is not allowed");
+	}
+
+	for (auto& global : s().globals) {
+		validateGlobal(global);
+	}
+
+	for (auto& elem : s().elements) {
+		validateElementSegment(elem);
+	}
+
+	// TODO: Validate data segments
+
+	parsingState = nullptr;
+}
+
+void ModuleValidator::setupConcatContext()
+{
+	concatFunctions.reserve(s().functions.size());
+	// Do imports first
+	for (auto idx : s().functions) {
+		if (idx >= s().functionTypes.size()) {
+			throwValidationError("Function references invalid type index");
+		}
+
+		auto& typePtr = s().functionTypes[idx];
+		concatFunctions.emplace_back( &typePtr );
+	}
+
+	concatTables.reserve(s().tableTypes.size());
+	// Do imports first
+	for (auto& table : s().tableTypes) {
+		concatTables.emplace_back(&table);
+	}
+
+	concatMemories.reserve(s().memoryTypes.size());
+	// Do imports first
+	for (auto& mem : s().memoryTypes) {
+		concatMemories.emplace_back(&mem);
+	}
+
+	concatGlobals.reserve(s().globals.size());
+	// Do imports first
+	for (auto& global : s().globals) {
+		concatGlobals.emplace_back(&global);
+	}
+}
+
+void ModuleValidator::validateFunction(u32 funcNum)
+{
+	auto typeIdx = s().functions[funcNum];
+	if (typeIdx >= concatFunctions.size()) {
+		throwValidationError("Function references invalid function type index");
+	}
+
+	// auto& type = *concatFunctions[typeIdx];
+	// TODO: Validate function body
+}
+
+void ModuleValidator::validateTableType(const TableType& t)
+{
+	constexpr u32 tableRange = 0xFFFFFFFF;
+	if (!t.limits().isValid(tableRange)) {
+		throwValidationError("Invalid table limits definition");
+	}
+
+	std::cout << "Validated table type" << std::endl;
+}
+
+void ModuleValidator::validateMemoryType(const MemoryType& m)
+{
+	constexpr u32 memoryRange = 0xFFFF;
+	if (!m.limits().isValid(memoryRange)) {
+		throwValidationError("Invalid range limits definition");
+	}
+
+	std::cout << "Validated memory type" << std::endl;
+}
+
+void ModuleValidator::validateExport(const Export& e)
+{
+	if (!e.isValid(concatFunctions.size(), concatTables.size(), concatMemories.size(), concatGlobals.size())) {
+		throwValidationError("Export references invalid index");
+	}
+
+	// Try insert the name and throw if it already exists
+	auto result= exportNames.emplace(e.name());
+	if ( !result.second ) {
+		throwValidationError("Duplicate export name");
+	}
+
+	std::cout << "Validated export '" << e.name() << "'" << std::endl;
+}
+
+void ModuleValidator::validateStartFunction(u32 idx)
+{
+	if (idx >= concatFunctions.size()) {
+		throwValidationError("Start function references invalid index");
+	}
+
+	if (!concatFunctions[idx]->takesVoidReturnsVoid()) {
+		throwValidationError("Start function has wrong type");
+	}
+
+	std::cout << "Validated start function" << std::endl;
+}
+
+void ModuleValidator::validateGlobal(const Global& global)
+{
+	validateConstantExpression(global.initExpression(), global.valType());
+}
+
+void ModuleValidator::validateElementSegment(const Element& elem)
+{
+	auto initExpressions = elem.initExpressions();
+	if (initExpressions.has_value()) {
+		for (auto& expr : *initExpressions) {
+			validateConstantExpression(expr, elem.valType());
+		}
+	}
+	else {
+		if (elem.valType() != ValType::FuncRef) {
+			throwValidationError("Element segment cannot be initialized with function references, wrong type.");
+		}
+	}
+
+	if (elem.mode() == ElementMode::Active) {
+		// FIXME: Assume that C.tables[x] means the local module only. 
+		// The current context C' does not have any tables defined. Or does it?
+
+		auto tableIdx = elem.tableIndex();
+		if (tableIdx >= s().tableTypes.size()) {
+			throwValidationError("Element segment references invalid table index");
+		}
+
+		auto& table = s().tableTypes[tableIdx];
+		if (table.valType() != elem.valType()) {
+			throwValidationError("Element segment type missmatch with reference table");
+		}
+
+		auto& tablePos = elem.tablePosition();
+		assert(tablePos.has_value());
+		
+		validateConstantExpression(tablePos->tableOffset, ValType::I32);
+	}
+
+	std::cout << "Validated element segment" << std::endl;
+}
+
+void ModuleValidator::validateConstantExpression(const Expression& exp, ValType expectedType)
+{
+	// Only instructions that return something on the stack are allowed, and only
+	// one result [t] is expected on the stack. Therefore, only one instruction plus
+	// 'End' can occur
+	if (exp.size() > 2) {
+		throwValidationError("Wrong stack type for init expression");
+	}
+
+	auto& ins = *exp.begin();
+	if (!ins.isConstant() && ins != InstructionType::End) {
+		throwValidationError("Non-const instruction in init expression");
+	}
+
+	auto resultType = ins.constantType();
+	if (resultType.has_value() && *resultType != expectedType) {
+		throwValidationError("Constant expression yields unexpected type");
+	}
+
+	if (ins == InstructionType::GlobalGet) {
+		// TODO: Constant GlobalGet is only allowed for imported globals, which do not exist yet
+		assert(false);
+	}
+
+	std::cout << "Validated global" << std::endl;
+}
+
+void ModuleValidator::throwValidationError(const char* msg) const
+{
+	throw ValidationError{ s().path, msg };
+}

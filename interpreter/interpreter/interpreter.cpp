@@ -10,5 +10,10 @@ void Interpreter::loadModule(std::string path)
 {
 	auto buffer= Buffer::fromFile(path);
 	ModuleParser parser;
-	auto module= parser.parse(std::move(buffer), std::move(path));
+	parser.parse(std::move(buffer), std::move(path));
+
+	ModuleValidator validator;
+	validator.validate(parser);
+
+	auto module = parser.toModule();
 }

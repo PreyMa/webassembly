@@ -792,7 +792,23 @@ void Instruction::printSelectVectorInstruction(std::ostream& out, const BufferSl
 	out << " ]";
 }
 
-void WASM::Instruction::printBlockTypeInstruction(std::ostream& out) const
+bool Instruction::isConstant() const
+{
+	switch (type) {
+	case InstructionType::I32Const:
+	case InstructionType::I64Const:
+	case InstructionType::F32Const:
+	case InstructionType::F64Const:
+	case InstructionType::ReferenceNull:
+	case InstructionType::ReferenceFunction:
+	case InstructionType::GlobalGet:
+		return true;
+	default:
+		return false;
+	}
+}
+
+void Instruction::printBlockTypeInstruction(std::ostream& out) const
 {
 	assert(type == InstructionType::Block || type == InstructionType::Loop || type == InstructionType::If);
 	auto blockType = BlockType::fromInt(operandA);
@@ -1074,6 +1090,20 @@ void Instruction::print(std::ostream& out, const BufferSlice& data) const
 	default:
 		throw std::runtime_error{ "Could not create instruction object from unkown instruction type" };
 	}
+}
+
+std::optional<ValType> Instruction::constantType() const {
+	switch (type) {
+	case InstructionType::I32Const: return ValType::I32;
+	case InstructionType::I64Const: return ValType::I64;
+	case InstructionType::F32Const: return ValType::F32;
+	case InstructionType::F64Const: return ValType::F64;
+	case InstructionType::ReferenceNull: return ValType::FuncRef;
+	case InstructionType::ReferenceFunction: return ValType::FuncRef;
+		// GlobalGet has to be handled manually be the caller
+	}
+
+	return {};
 }
 
 const char* BlockType::name() const

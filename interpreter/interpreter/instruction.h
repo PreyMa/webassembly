@@ -1,11 +1,14 @@
 #pragma once
 
+#include <optional>
+
 #include "util.h"
 #include "enum.h"
 #include "buffer.h"
 
 namespace WASM {
 	class Instruction;
+	class ValType;
 
 	class InstructionType : public Enum <InstructionType> {
 	public:
@@ -266,6 +269,8 @@ namespace WASM {
 
 		static Instruction fromWASMBytes(BufferIterator&);
 
+		bool isConstant() const;
+		std::optional<ValType> constantType() const;
 		void print(std::ostream&, const BufferSlice&) const;
 
 		bool operator==(InstructionType t) const { return type == t; }

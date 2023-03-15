@@ -1,9 +1,11 @@
 #pragma once
 
 #include <unordered_map>
+#include <unordered_set>
 #include <optional>
 #include <variant>
 
+#include "nullable.h"
 #include "instruction.h"
 
 namespace WASM {
@@ -135,6 +137,10 @@ namespace WASM {
 		void printBytes(std::ostream&) const;
 		void print(std::ostream&) const;
 
+		auto size() const { return mInstructions.size(); }
+		auto begin() const { return mInstructions.cbegin(); }
+		auto end() const { return mInstructions.cend(); }
+
 	private:
 		BufferSlice mBytes;
 		std::vector<Instruction> mInstructions;
@@ -147,7 +153,8 @@ namespace WASM {
 
 		FunctionType(FunctionType&&) = default;
 
-		void print(std::ostream&);
+		bool takesVoidReturnsVoid() const;
+		void print(std::ostream&) const;
 
 	private:
 		std::vector<ValType> parameters;
@@ -159,7 +166,8 @@ namespace WASM {
 		Limits( u32 i ) : min{ i }, max{} {}
 		Limits( u32 i, u32 a ) : min{ i }, max{ a } {}
 
-		void print(std::ostream&);
+		void print(std::ostream&) const;
+		bool isValid(u32 range) const;
 	
 	private:
 		u32 min;
@@ -168,83 +176,99 @@ namespace WASM {
 
 	class TableType {
 	public:
-		TableType(ValType et, Limits l) : elementReferenceType{ et }, limits{ l } {
-			assert( elementReferenceType.isReference() );
+		TableType(ValType et, Limits l) : mElementReferenceType{ et }, mLimits{ l } {
+			assert( mElementReferenceType.isReference() );
 		}
-		
-		void print(std::ostream&);
+
+		const ValType valType() const { return mElementReferenceType; }
+		const Limits& limits() const { return mLimits; }
+
+		void print(std::ostream&) const;
 
 	private:
-		ValType elementReferenceType;
-		Limits limits;
+		ValType mElementReferenceType;
+		Limits mLimits;
 	};
 
 	class MemoryType {
 	public:
-		MemoryType(Limits l) : limits{ l } {}
+		MemoryType(Limits l) : mLimits{ l } {}
 
-		void print(std::ostream& out) { limits.print( out ); }
+		const Limits& limits() const { return mLimits; }
+
+		void print(std::ostream& out) const { mLimits.print( out ); }
 
 	private:
-		Limits limits;
+		Limits mLimits;
 	};
 
 	class Global {
 	public:
 		Global(ValType t, bool m, Expression c)
-			: type{ t }, isMutable{ m }, initExpression{ std::move(c) } {}
+			: mType{ t }, mIsMutable{ m }, mInitExpression{ std::move(c) } {}
+
+		const ValType valType() const { return mType; }
+		const Expression& initExpression() const { return mInitExpression; }
 
 		void print(std::ostream& out) const;
 
 	private:
-		ValType type;
-		bool isMutable;
-		Expression initExpression;
+		ValType mType;
+		bool mIsMutable;
+		Expression mInitExpression;
 	};
 
 	class Export {
 	public:
 		Export(std::string n, ExportType e, u32 i)
-			: name{ std::move(n) }, exportType{ e }, index{ i } {}
+			: mName{ std::move(n) }, mExportType{ e }, mIndex{ i } {}
 
-		void print(std::ostream& out);
+		const std::string& name() const { return mName; }
+
+		bool isValid(u32,u32,u32, u32) const;
+		void print(std::ostream& out) const;
 
 	private:
-		std::string name;
-		ExportType exportType;
-		u32 index;
+		std::string mName;
+		ExportType mExportType;
+		u32 mIndex;
 	};
 
 	class Element {
 	public:
-		Element( ElementMode m, ValType r, std::vector<u32> f )
-			: mode{ m }, refType{r}, initExpressions { std::move(f) } {}
-
-		Element(ElementMode m, ValType r, u32 ti, Expression to, std::vector<u32> f)
-			: mode{ m }, refType{ r }, tablePosition{ {ti, std::move(to)} }, initExpressions{ std::move(f) } {}
-
-		Element(ElementMode m, ValType r, std::vector<Expression> e)
-			: mode{ m }, refType{ r }, initExpressions{ std::move(e) } {}
-
-		Element(ElementMode m, ValType r, u32 ti, Expression to, std::vector<Expression> e)
-			: mode{ m }, refType{ r }, tablePosition{ {ti, std::move(to)} }, initExpressions{ std::move(e) } {}
-
-		void print(std::ostream& out) const;
-
-	private:
-		u32 tableIndex() const {
-			return tablePosition.has_value() ? tablePosition->tableIndex : 0;
-		}
-
 		struct TablePosition {
 			u32 tableIndex;
 			Expression tableOffset;
 		};
 
-		ElementMode mode;
+		Element( ElementMode m, ValType r, std::vector<u32> f )
+			: mMode{ m }, refType{r}, mInitExpressions{ std::move(f) } {}
+
+		Element(ElementMode m, ValType r, u32 ti, Expression to, std::vector<u32> f)
+			: mMode{ m }, refType{ r }, mTablePosition{ {ti, std::move(to)} }, mInitExpressions{ std::move(f) } {}
+
+		Element(ElementMode m, ValType r, std::vector<Expression> e)
+			: mMode{ m }, refType{ r }, mInitExpressions{ std::move(e) } {}
+
+		Element(ElementMode m, ValType r, u32 ti, Expression to, std::vector<Expression> e)
+			: mMode{ m }, refType{ r }, mTablePosition{ {ti, std::move(to)} }, mInitExpressions{ std::move(e) } {}
+
+		u32 tableIndex() const {
+			return mTablePosition.has_value() ? mTablePosition->tableIndex : 0;
+		}
+
+		ElementMode mode() const { return mMode; }
+		ValType valType() const { return refType; }
+		const std::optional<TablePosition>& tablePosition() const { return mTablePosition; }
+		Nullable<const std::vector<Expression>> initExpressions() const;
+
+		void print(std::ostream& out) const;
+
+	private:
+		ElementMode mMode;
 		ValType refType;
-		std::optional<TablePosition> tablePosition;
-		std::variant<std::vector<u32>, std::vector<Expression>> initExpressions;
+		std::optional<TablePosition> mTablePosition;
+		std::variant<std::vector<u32>, std::vector<Expression>> mInitExpressions;
 	};
 
 	class FunctionCode {
@@ -265,13 +289,38 @@ namespace WASM {
 		std::vector<CompressedLocalTypes> compressedLocalTypes;
 	};
 
-	class ModuleParser {
+	class ParsingState {
 	public:
-		
 		using NameMap = std::unordered_map<u32, std::string>;
-		using IndirectNameMap= std::unordered_map<u32, NameMap>;
+		using IndirectNameMap = std::unordered_map<u32, NameMap>;
 
-		Module parse(Buffer, std::string);
+	protected:
+		friend class ModuleValidator;
+
+		std::string path;
+		Buffer data;
+		BufferIterator it;
+		std::unordered_map<std::string, BufferSlice> customSections;
+		std::vector<FunctionType> functionTypes;
+		std::vector<u32> functions;
+		std::vector<TableType> tableTypes;
+		std::vector<MemoryType> memoryTypes;
+		std::vector<Global> globals;
+		std::vector<Export> exports;
+		std::optional<u32> startFunction;
+		std::vector<Element> elements;
+		std::vector<FunctionCode> functionCodes;
+
+		std::string mName;
+		NameMap functionNames;
+		IndirectNameMap functionLocalNames;
+	};
+
+
+	class ModuleParser : public ParsingState {
+	public:
+		void parse(Buffer, std::string);
+		Module toModule();
 
 	private:
 		bool hasNext(u32 num = 1) const { return it.hasNext(num); }
@@ -322,23 +371,37 @@ namespace WASM {
 		std::vector<u32> parseU32Vector();
 
 		void throwParsingError(const char*) const;
+	};
 
-		std::string path;
-		Buffer data;
-		BufferIterator it;
-		std::unordered_map<std::string, BufferSlice> customSections;
-		std::vector<FunctionType> functionTypes;
-		std::vector<u32> functions;
-		std::vector<TableType> tableTypes;
-		std::vector<MemoryType> memoryTypes;
-		std::vector<Global> globals;
-		std::vector<Export> exports;
-		std::optional<u32> startFunction;
-		std::vector<Element> elements;
-		std::vector<FunctionCode> functionCodes;
+	class ModuleValidator {
+	public:
 
-		std::string mName;
-		NameMap functionNames;
-		IndirectNameMap functionLocalNames;
+		void validate(const ParsingState&);
+
+	private:
+		const ParsingState& s() const { assert(parsingState); return *parsingState; }
+
+		void setupConcatContext();
+
+		void validateFunction(u32);
+		void validateTableType(const TableType&);
+		void validateMemoryType(const MemoryType&);
+		void validateExport(const Export&);
+		void validateStartFunction(u32);
+		void validateGlobal(const Global&);
+		void validateElementSegment(const Element&);
+
+		void validateConstantExpression(const Expression&, ValType);
+		void validateExpression(const Expression&);
+
+		void throwValidationError(const char*) const;
+
+		const ParsingState* parsingState{ nullptr };
+		std::unordered_set<std::string> exportNames;
+
+		std::vector<const FunctionType*> concatFunctions;
+		std::vector<const TableType*> concatTables;
+		std::vector<const MemoryType*> concatMemories;
+		std::vector<const Global*> concatGlobals;
 	};
 }
