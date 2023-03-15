@@ -47,25 +47,25 @@ std::string ModuleParser::parseNameString()
 void ModuleParser::parseHeader()
 {
 	if (!hasNext()) {
-		throw std::runtime_error{ "Expected module header is too short" };
+		throwParsingError("Expected module header is too short");
 	}
 
 	auto magicNumber = nextBigEndianU32();
 	auto versionNumber = nextBigEndianU32();
 
 	if (magicNumber != 0x0061736d) {
-		throw std::runtime_error{ "Invalid module header magic number" };
+		throwParsingError("Invalid module header magic number");
 	}
 
 	if (versionNumber != 0x01000000) {
-		throw std::runtime_error{ "Invalid module header version number" };
+		throwParsingError("Invalid module header version number");
 	}
 }
 
 void ModuleParser::parseSection()
 {
 	if (!hasNext()) {
-		throw std::runtime_error{ "Expected section type byte" };
+		throwParsingError("Expected section type byte");
 	}
 
 	auto type = SectionType::fromInt(nextU8());
@@ -94,7 +94,7 @@ void ModuleParser::parseSection()
 void ModuleParser::parseCustomSection(u32 length)
 {
 	if (!hasNext(length)) {
-		throw std::runtime_error{ "Custom section is longer than available data" };
+		throwParsingError("Custom section is longer than available data");
 	}
 
 	auto endPos = it+ length;
@@ -121,7 +121,7 @@ void ModuleParser::parseNameSection(BufferIterator endPos)
 		auto length = nextU32();
 		
 		if (prevSectionType.has_value() && type <= *prevSectionType) {
-			throw std::runtime_error{ "Expected name subsection indices in increasing order" };
+			throwParsingError("Expected name subsection indices in increasing order");
 		}
 
 		auto oldPos = it;
@@ -322,7 +322,7 @@ ModuleParser::NameMap ModuleParser::parseNameMap()
 		auto name = parseNameString();
 
 		if (i!= 0 && nameIdx <= prevNameIdx) {
-			throw std::runtime_error{ "Expected name indices in increasing order for name map." };
+			throwParsingError("Expected name indices in increasing order for name map.");
 		}
 
 		nameMap.emplace( nameIdx, std::move(name) );
@@ -346,7 +346,7 @@ ModuleParser::IndirectNameMap ModuleParser::parseIndirectNameMap()
 		auto nameMap = parseNameMap();
 
 		if (i!= 0 && groupIdx <= prevGroupIdx) {
-			throw std::runtime_error{ "Expected group indices in increasing order for indirect name map." };
+			throwParsingError("Expected group indices in increasing order for indirect name map.");
 		}
 
 		indirectMap.emplace(groupIdx, std::move(nameMap));
@@ -373,7 +373,7 @@ std::vector<ValType> ModuleParser::parseResultTypeVector()
 	for (u32 i = 0; i != resultNum; i++) {
 		auto valType = ValType::fromInt(nextU8());
 		if (!valType.isValid()) {
-			throw std::runtime_error{ "Found invalid val type while parsing result type vector" };
+			throwParsingError("Found invalid val type while parsing result type vector");
 		}
 		results.push_back( valType );
 	}
@@ -384,12 +384,12 @@ std::vector<ValType> ModuleParser::parseResultTypeVector()
 TableType ModuleParser::parseTableType()
 {
 	if (!hasNext(3)) {
-		throw std::runtime_error{ "Not enough bytes to parse table type" };
+		throwParsingError("Not enough bytes to parse table type");
 	}
 
 	auto elementRefType = ValType::fromInt(nextU8());
 	if (!elementRefType.isReference()) {
-		throw std::runtime_error{ "Expected reference val type for table element type" };
+		throwParsingError("Expected reference val type for table element type");
 	}
 
 	auto limits = parseLimits();
@@ -399,7 +399,7 @@ TableType ModuleParser::parseTableType()
 MemoryType ModuleParser::parseMemoryType()
 {
 	if (!hasNext()) {
-		throw std::runtime_error{ "Not enough bytes to parse memory type" };
+		throwParsingError("Not enough bytes to parse memory type");
 	}
 	
 	return { parseLimits()};
@@ -408,12 +408,12 @@ MemoryType ModuleParser::parseMemoryType()
 Global ModuleParser::parseGlobal()
 {
 	if (!hasNext(3)) {
-		throw std::runtime_error{ "Not enough bytes to parse global" };
+		throwParsingError("Not enough bytes to parse global");
 	}
 
 	auto valType = ValType::fromInt(nextU8());
 	if (!valType.isValid()) {
-		throw std::runtime_error{ "Invalid valtype for global" };
+		throwParsingError("Invalid valtype for global");
 	}
 
 	bool isMutable = false;
@@ -422,7 +422,7 @@ Global ModuleParser::parseGlobal()
 		isMutable = static_cast<bool>(isMutableFlag);
 	}
 	else {
-		throw std::runtime_error{ "Invalid mutability flag for global. Expected 0x00 or 0x01" };
+		throwParsingError("Invalid mutability flag for global. Expected 0x00 or 0x01");
 	}
 
 	auto initExpressionCode = parseInitExpression();
@@ -443,7 +443,7 @@ Limits ModuleParser::parseLimits()
 		return { min, max };
 	}
 	else {
-		throw std::runtime_error{ "Invalid limits format. Expected 0x00 or 0x01" };
+		throwParsingError("Invalid limits format. Expected 0x00 or 0x01");
 	}
 }
 
@@ -458,7 +458,7 @@ BufferSlice ModuleParser::parseInitExpression()
 		}
 	}
 
-	throw std::runtime_error{ "Unexpected end of module while parsing init expression" };
+	throwParsingError("Unexpected end of module while parsing init expression");
 }
 
 std::vector<BufferSlice> ModuleParser::parseInitExpressionVector()
@@ -487,10 +487,15 @@ std::vector<u32> ModuleParser::parseU32Vector()
 	return ints;
 }
 
+void WASM::ModuleParser::throwParsingError(const char* msg) const
+{
+	throw ParsingError{ static_cast<u64>(it.positionPointer() - data.begin()), path, std::string{msg} };
+}
+
 Export ModuleParser::parseExport()
 {
 	if (!hasNext(3)) {
-		throw std::runtime_error{ "Not enough bytes to parse export" };
+		throwParsingError("Not enough bytes to parse export");
 	}
 	
 	auto name = parseNameString();
@@ -504,14 +509,14 @@ Element ModuleParser::parseElement()
 {
 	const auto parseElementKind = [this]() {
 		if (nextU8() != 0x00) {
-			throw std::runtime_error{ "Only element kind 'function reference' is supported" };
+			throwParsingError("Only element kind 'function reference' is supported");
 		}
 	};
 
 	const auto parseReferenceType = [this]() {
 		auto refType = ValType::fromInt(nextU8());
 		if (!refType.isReference()) {
-			throw std::runtime_error{ "Expected reference type for element" };
+			throwParsingError("Expected reference type for element");
 		}
 		return refType;
 	};
@@ -584,7 +589,7 @@ Element ModuleParser::parseElement()
 		return {ElementMode::Declarative, refType, std::move(exprs)};
 	}
 	default:
-		throw std::runtime_error{ "Invalid element bit field" };
+		throwParsingError("Invalid element bit field");
 	}
 }
 
@@ -603,11 +608,11 @@ FunctionCode ModuleParser::parseFunctionCode()
 
 	auto codeSlice = nextSliceTo(posBeforeLocals + byteCount);
 	if (codeSlice.isEmpty()) {
-		throw std::runtime_error{ "Invalid funcion code item. Empty expression" };
+		throwParsingError("Invalid funcion code item. Empty expression");
 	}
 		
 	if (codeSlice.last() != 0x0B) {
-		throw std::runtime_error{ "Invalid funcion code item. Expected 0x0B at end of expression" };
+		throwParsingError("Invalid funcion code item. Expected 0x0B at end of expression");
 	}
 
 	return { codeSlice, std::move(locals) };

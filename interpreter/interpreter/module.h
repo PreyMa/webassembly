@@ -309,6 +309,8 @@ namespace WASM {
 		std::vector<BufferSlice> parseInitExpressionVector();
 		std::vector<u32> parseU32Vector();
 
+		void throwParsingError(const char*) const;
+
 		std::string path;
 		Buffer data;
 		BufferIterator it;
