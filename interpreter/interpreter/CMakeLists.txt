@@ -3,7 +3,7 @@
 #
 
 # Add source to this project's executable.
-add_library (interpreter STATIC "interpreter.cpp" "interpreter.h" "module.h" "buffer.h" "util.h" "buffer.cpp" "module.cpp" "enum.h" "instruction.cpp" "error.h" "error.cpp" "nullable.h")
+add_library (interpreter STATIC "interpreter.cpp" "interpreter.h" "module.h" "buffer.h" "util.h" "buffer.cpp" "module.cpp" "enum.h" "instruction.cpp" "error.h" "error.cpp" "nullable.h" "enum.cpp")
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET interpreter PROPERTY CXX_STANDARD 20)
