@@ -620,28 +620,28 @@ FunctionCode ModuleParser::parseFunctionCode()
 
 bool FunctionType::takesVoidReturnsVoid() const
 {
-	return parameters.empty() && results.empty();
+	return mParameters.empty() && mResults.empty();
 }
 
 void FunctionType::print(std::ostream& out) const
 {
 	out << "Function: ";
 
-	for (auto& param : parameters) {
+	for (auto& param : mParameters) {
 		out << param.name() << ' ';
 	}
 
-	if (parameters.empty()) {
+	if (mParameters.empty()) {
 		out << "<none> ";
 	}
 
 	out << "-> ";
 
-	for (auto& result : results) {
+	for (auto& result : mResults) {
 		out << result.name() << ' ';
 	}
 
-	if (results.empty()) {
+	if (mResults.empty()) {
 		out << "<none>";
 	}
 }
@@ -762,8 +762,6 @@ void ModuleValidator::validate(const ParsingState& parser)
 	parsingState = &parser;
 
 	// Under module context C
-	// TODO: Combine the lists of module local types with imported types -> imported types go before
-	setupConcatContext();
 
 	if (s().functions.size() != s().functionCodes.size()) {
 		throwValidationError("Parsed different number of function declarations than function codes");
@@ -810,47 +808,48 @@ void ModuleValidator::validate(const ParsingState& parser)
 	parsingState = nullptr;
 }
 
-void ModuleValidator::setupConcatContext()
+const FunctionType& ModuleValidator::functionTypeByIndex(u32 funcIdx)
 {
-	concatFunctions.reserve(s().functions.size());
-	// Do imports first
-	for (auto idx : s().functions) {
-		if (idx >= s().functionTypes.size()) {
-			throwValidationError("Function references invalid type index");
-		}
-
-		auto& typePtr = s().functionTypes[idx];
-		concatFunctions.emplace_back( &typePtr );
+	u32 typeIdx;
+	if (funcIdx < s().importedFunctions.size()) {
+		typeIdx= s().importedFunctions[funcIdx];
 	}
 
-	concatTables.reserve(s().tableTypes.size());
-	// Do imports first
-	for (auto& table : s().tableTypes) {
-		concatTables.emplace_back(&table);
+	funcIdx -= s().importedFunctions.size();
+	if (funcIdx > s().functions.size()) {
+		throwValidationError("Invalid function index");
 	}
-
-	concatMemories.reserve(s().memoryTypes.size());
-	// Do imports first
-	for (auto& mem : s().memoryTypes) {
-		concatMemories.emplace_back(&mem);
+	
+	typeIdx= s().functions[funcIdx];
+	if (typeIdx > s().functionTypes.size()) {
+		throwValidationError("Function references invalid type index");
 	}
-
-	concatGlobals.reserve(s().globals.size());
-	// Do imports first
-	for (auto& global : s().globals) {
-		concatGlobals.emplace_back(&global);
-	}
+	return s().functionTypes[typeIdx];
 }
 
 void ModuleValidator::validateFunction(u32 funcNum)
 {
 	auto typeIdx = s().functions[funcNum];
-	if (typeIdx >= concatFunctions.size()) {
-		throwValidationError("Function references invalid function type index");
+	if (typeIdx > s().functionTypes.size()) {
+		throwValidationError("Function references invalid type index");
 	}
 
-	// auto& type = *concatFunctions[typeIdx];
-	// TODO: Validate function body
+	auto& type = s().functionTypes[typeIdx];
+	auto& code = s().functionCodes[funcNum];
+
+	setFunctionContext( type, code );
+	valueStack.clear();
+	controlStack.clear();
+
+	controlStack.emplace_back(InstructionType::NoOperation, BlockTypeIndex{BlockType::TypeIndex, typeIdx}, 0, false);
+
+	for (auto& ins : code) {
+		validateOpcode(ins);
+	}
+
+	std::cout << "Validated function " << funcNum << " with type ";
+	type.print(std::cout);
+	std::cout << std::endl;
 }
 
 void ModuleValidator::validateTableType(const TableType& t)
@@ -875,7 +874,11 @@ void ModuleValidator::validateMemoryType(const MemoryType& m)
 
 void ModuleValidator::validateExport(const Export& e)
 {
-	if (!e.isValid(concatFunctions.size(), concatTables.size(), concatMemories.size(), concatGlobals.size())) {
+	auto numFunctions = s().functions.size() + s().importedFunctions.size();
+	auto numTables = s().tableTypes.size() + s().importedTableTypes.size();
+	auto numMemories = s().memoryTypes.size() + s().importedMemoryTypes.size();
+	auto numGlobals = s().globals.size() + s().importedGlobalTypes.size();
+	if (!e.isValid(numFunctions, numTables, numMemories, numGlobals)) {
 		throwValidationError("Export references invalid index");
 	}
 
@@ -890,11 +893,8 @@ void ModuleValidator::validateExport(const Export& e)
 
 void ModuleValidator::validateStartFunction(u32 idx)
 {
-	if (idx >= concatFunctions.size()) {
-		throwValidationError("Start function references invalid index");
-	}
-
-	if (!concatFunctions[idx]->takesVoidReturnsVoid()) {
+	auto& funcType = functionTypeByIndex(idx);
+	if (!funcType.takesVoidReturnsVoid()) {
 		throwValidationError("Start function has wrong type");
 	}
 
@@ -970,7 +970,375 @@ void ModuleValidator::validateConstantExpression(const Expression& exp, ValType 
 	std::cout << "Validated global" << std::endl;
 }
 
+void WASM::ModuleValidator::setFunctionContext(const FunctionType& type, const FunctionCode& code)
+{
+	currentFunctionType = &type;
+	currentLocals = &code.locals();
+}
+
+void ModuleValidator::pushValue(ValType type)
+{
+	valueStack.emplace_back(type);
+}
+
+ModuleValidator::ValueRecord ModuleValidator::popValue()
+{
+	if (controlStack.empty()) {
+		throwValidationError("Control stack is empty");
+	}
+
+	auto& frame = controlStack.back();
+	if (valueStack.size() == frame.height && frame.unreachable) {
+		return {};
+	}
+
+	if (valueStack.size() == frame.height) {
+		throwValidationError("Value stack underflows current block height");
+	}
+
+	if (valueStack.empty()) {
+		throwValidationError("Value stack underflow");
+	}
+
+	auto valueTop = valueStack.back();
+	valueStack.pop_back();
+	return valueTop;
+}
+
+ModuleValidator::ValueRecord ModuleValidator::popValue(ValueRecord expected)
+{
+	auto actual = popValue();
+	if (!expected.has_value() || !actual.has_value()) {
+		return actual;
+	}
+
+	if (*expected == *actual) {
+		return actual;
+	}
+
+	throwValidationError("Stack types differ");
+}
+
+void ModuleValidator::pushValues(const std::vector<ValType>& types)
+{
+	valueStack.reserve(valueStack.size()+ types.size());
+	valueStack.insert(valueStack.end(), types.begin(), types.end());
+}
+
+void ModuleValidator::pushValues(const BlockTypeParameters& parameters)
+{
+	if (parameters.has_value()) {
+		if (*parameters >= s().functionTypes.size()) {
+			throwValidationError("Block type index references invalid function type");
+		}
+		auto& type = s().functionTypes[*parameters];
+		pushValues(type.parameters());
+	}
+}
+
+void ModuleValidator::pushValues(const BlockTypeResults& results)
+{
+	if (results == BlockType::TypeIndex) {
+		if (results.index >= s().functionTypes.size()) {
+			throwValidationError("Block type index references invalid function type");
+		}
+		auto& type = s().functionTypes[results.index];
+		pushValues(type.results());
+		return;
+	}
+
+	if (results == BlockType::ValType) {
+		auto valType = ValType::fromInt(results.index);
+		assert(valType.isValid());
+		pushValue(valType);
+	}
+}
+
+void ModuleValidator::pushValues(const ModuleValidator::LabelTypes& types)
+{
+	if (types.index() == 0) {
+		pushValues(std::get<0>(types));
+	}
+	else {
+		pushValues(std::get<1>(types));
+	}
+}
+
+void ModuleValidator::resetCachedReturnList(u32 expectedSize)
+{
+	cachedReturnList.clear();
+	cachedReturnList.reserve(expectedSize);
+	cachedReturnList.assign(expectedSize, ValueRecord{});
+}
+
+ValType WASM::ModuleValidator::localByIndex(u32 idx) const
+{
+	assert(currentFunctionType && currentLocals);
+
+	auto& params = currentFunctionType->parameters();
+	if (idx < params.size()) {
+		return params[idx];
+	}
+
+	idx -= params.size();
+	for (auto& pack : *currentLocals) {
+		if (idx < pack.count) {
+			return pack.type;
+		}
+
+		idx -= pack.count;
+	}
+
+	throwValidationError("Local index out of bounds");
+}
+
+std::vector<ModuleValidator::ValueRecord>& ModuleValidator::popValues(const std::vector<ModuleValidator::ValueRecord>& expected)
+{
+	resetCachedReturnList(expected.size());
+
+	// Iterate in reverse
+	auto insertIt = cachedReturnList.rend();
+	for (auto it = expected.rbegin(); it != expected.rend(); it++) {
+		*(insertIt++) = popValue(*it);
+	}
+
+	return cachedReturnList;
+}
+
+std::vector<ModuleValidator::ValueRecord>& ModuleValidator::popValues(const std::vector<ValType>& expected)
+{
+	resetCachedReturnList(expected.size());
+
+	// Iterate in reverse
+	auto insertIt = cachedReturnList.rbegin();
+	for (auto it = expected.rbegin(); it != expected.rend(); it++) {
+		*(insertIt++) = popValue(*it);
+	}
+
+	return cachedReturnList;
+}
+
+std::vector<ModuleValidator::ValueRecord>& ModuleValidator::popValues(const BlockTypeResults& expected) {
+	if (expected == BlockType::TypeIndex) {
+		if (expected.index >= s().functionTypes.size()) {
+			throwValidationError("Block type index references invalid function type");
+		}
+		auto& type = s().functionTypes[expected.index];
+		return popValues(type.results());
+	}
+
+	if (expected == BlockType::ValType) {
+		resetCachedReturnList(1);
+		auto valType = ValType::fromInt(expected.index);
+		assert(valType.isValid());
+		cachedReturnList[0]= popValue(valType);
+		return cachedReturnList;
+	}
+
+	resetCachedReturnList(0);
+	return cachedReturnList;
+}
+
+std::vector<ModuleValidator::ValueRecord>& ModuleValidator::popValues(const BlockTypeParameters& expected) {
+	if (expected.has_value()) {
+		if (*expected >= s().functionTypes.size()) {
+			throwValidationError("Block type index references invalid function type");
+		}
+		auto& type = s().functionTypes[*expected];
+		return popValues(type.parameters());
+	}
+
+	resetCachedReturnList(0);
+	return cachedReturnList;
+}
+
+std::vector<ModuleValidator::ValueRecord>& ModuleValidator::popValues(const ModuleValidator::LabelTypes& types)
+{
+	if (types.index() == 0) {
+		return popValues(std::get<0>(types));
+	}
+
+	return popValues(std::get<1>(types));
+}
+
+void ModuleValidator::pushControlFrame(InstructionType opCode, BlockTypeIndex blockTypeIndex)
+{
+	controlStack.emplace_back(opCode, blockTypeIndex, valueStack.size(), false);
+	pushValues(blockTypeIndex.parameters());
+}
+
+ModuleValidator::ControlFrame ModuleValidator::popControlFrame()
+{
+	if (controlStack.empty()) {
+		throwValidationError("Control stack underflow");
+	}
+
+	auto& frame = controlStack.back();
+	popValues(frame.blockTypeIndex.results());
+	if (valueStack.size() != frame.height) {
+		throwValidationError("Value stack height missmatch");
+	}
+
+	controlStack.pop_back();
+	return frame;
+}
+
+void ModuleValidator::setUnreachable()
+{
+	if (controlStack.empty()) {
+		throwValidationError("Control stack underflow");
+	}
+
+	auto& frame = controlStack.back();
+	valueStack.resize(frame.height);
+	frame.unreachable = true;
+}
+
+void WASM::ModuleValidator::validateOpcode(Instruction instruction)
+{
+	auto opCode = instruction.opCode();
+	if (opCode.isConstant() && opCode != InstructionType::GlobalGet) {
+		auto resultType = opCode.resultType();
+		assert(resultType.has_value());
+		pushValue(*resultType);
+		return;
+	}
+
+	if (opCode.isUnary()) {
+		auto operandType = opCode.operandType();
+		auto resultType = opCode.resultType();
+		assert(operandType.has_value() && resultType.has_value());
+		popValue(*operandType);
+		pushValue(*resultType);
+		return;
+	}
+
+	if (opCode.isBinary()) {
+		auto operandType = opCode.operandType();
+		auto resultType = opCode.resultType();
+		assert(operandType.has_value() && resultType.has_value());
+		popValue(*operandType);
+		popValue(*operandType);
+		pushValue(*resultType);
+		return;
+	}
+
+	auto validateBlockTypeInstruction = [&]() {
+		auto blockType= instruction.blockTypeIndex();
+		popValues(blockType.parameters());
+		pushControlFrame(instruction.opCode(), blockType);
+	};
+
+	auto validateBranchTypeInstruction = [&]() {		
+		auto label = instruction.branchLabel();
+		if (label > controlStack.size() || controlStack.empty()) {
+			throwValidationError("Branch label underflows control frame stack");
+		}
+
+		auto& frame = controlStack[controlStack.size() - label - 1];
+		auto labelTypes = frame.labelTypes();
+		popValues(labelTypes);
+
+		return labelTypes;
+	};
+
+	using IT = InstructionType;
+	switch (opCode) {
+	case IT::Unreachable:
+		setUnreachable();
+		return;
+
+	case IT::NoOperation:
+		return;
+
+	case IT::Block:
+	case IT::Loop:
+		validateBlockTypeInstruction();
+		return;
+
+	case IT::If:
+		popValue(ValType::I32);
+		validateBlockTypeInstruction();
+		return;
+
+	case IT::Else: {
+		auto frame = popControlFrame();
+		if (frame.opCode != InstructionType::If) {
+			throwValidationError("If block expected before else block");
+		}
+		pushControlFrame(InstructionType::Else, frame.blockTypeIndex);
+		return;
+	}
+
+	case IT::End: {
+		auto frame = popControlFrame();
+		pushValues(frame.blockTypeIndex.results());
+		return;
+	}
+
+	case IT::Branch:
+		validateBranchTypeInstruction();
+		setUnreachable();
+		return;
+
+	case IT::BranchIf: {
+		popValue(ValType::I32);
+		auto labelTypes = validateBranchTypeInstruction();
+		pushValues(labelTypes);
+		return;
+	}
+
+	case IT::Return: {
+		if (controlStack.empty()) {
+			throwValidationError("Control stack underflow during return");
+		}
+		popValues(controlStack[0].blockTypeIndex.results());
+		setUnreachable();
+		return;
+	}
+
+	// case IT::BranchTable:
+
+	case IT::Call: {
+		auto functionIdx = instruction.functionIndex();
+		auto& funcType = functionTypeByIndex(functionIdx);
+		popValues(funcType.parameters());
+		pushValues(funcType.results());
+		return;
+	}
+
+	case IT::Drop:
+		popValue();
+		return;
+
+	case IT::LocalGet: {
+		auto localType = localByIndex(instruction.localIndex());
+		pushValue(localType);
+		return;
+	}
+
+	case IT::LocalSet: {
+		auto localType = localByIndex(instruction.localIndex());
+		popValue(localType);
+		return;
+	}
+
+	}
+
+	std::cerr << "Validation not implemented for instruction '" << opCode.name() << "'!" << std::endl;
+	throw std::runtime_error{ "Validation not implemented for instruction" };
+}
+
 void ModuleValidator::throwValidationError(const char* msg) const
 {
 	throw ValidationError{ s().path, msg };
+}
+
+std::variant<BlockTypeParameters, BlockTypeResults> ModuleValidator::ControlFrame::labelTypes() const
+{
+	if(opCode == InstructionType::Loop) {
+		return { blockTypeIndex.parameters() };
+	}
+
+	return { blockTypeIndex.results() };
 }

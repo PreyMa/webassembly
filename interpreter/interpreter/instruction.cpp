@@ -228,7 +228,8 @@ InstructionType InstructionType::fromWASMBytes(BufferIterator& it)
 	}
 }
 
-const char* InstructionType::name() const {
+const char* InstructionType::name() const
+{
 	switch (value) {
 		case Unreachable: return "Unreachable";
 		case NoOperation: return "NoOperation";
@@ -792,21 +793,401 @@ void Instruction::printSelectVectorInstruction(std::ostream& out, const BufferSl
 	out << " ]";
 }
 
-bool Instruction::isConstant() const
+bool InstructionType::isConstant() const
 {
-	switch (type) {
-	case InstructionType::I32Const:
-	case InstructionType::I64Const:
-	case InstructionType::F32Const:
-	case InstructionType::F64Const:
-	case InstructionType::ReferenceNull:
-	case InstructionType::ReferenceFunction:
-	case InstructionType::GlobalGet:
+	using IT = InstructionType;
+	switch (value) {
+	case IT::I32Const:
+	case IT::I64Const:
+	case IT::F32Const:
+	case IT::F64Const:
+	case IT::ReferenceNull:
+	case IT::ReferenceFunction:
+	case IT::GlobalGet:
 		return true;
 	default:
 		return false;
 	}
 }
+
+bool InstructionType::isBinary() const
+{
+	using IT = InstructionType;
+	switch (value) {
+	case IT::I32Add:
+	case IT::I32Subtract:
+	case IT::I32Multiply:
+	case IT::I32DivideS:
+	case IT::I32DivideU:
+	case IT::I32RemainderS:
+	case IT::I32RemainderU:
+	case IT::I32And:
+	case IT::I32Or:
+	case IT::I32Xor:
+	case IT::I32ShiftLeft:
+	case IT::I32ShiftRightS:
+	case IT::I32ShiftRightU:
+	case IT::I32RotateLeft:
+	case IT::I32RotateRight:
+	case IT::I64Add:
+	case IT::I64Subtract:
+	case IT::I64Multiply:
+	case IT::I64DivideS:
+	case IT::I64DivideU:
+	case IT::I64RemainderS:
+	case IT::I64RemainderU:
+	case IT::I64And:
+	case IT::I64Or:
+	case IT::I64Xor:
+	case IT::I64ShiftLeft:
+	case IT::I64ShiftRightS:
+	case IT::I64ShiftRightU:
+	case IT::I64RotateLeft:
+	case IT::I64RotateRight:
+	case IT::F32Add:
+	case IT::F32Subtract:
+	case IT::F32Multiply:
+	case IT::F32Divide:
+	case IT::F32Minimum:
+	case IT::F32Maximum:
+	case IT::F32CopySign:
+	case IT::F64Add:
+	case IT::F64Subtract:
+	case IT::F64Multiply:
+	case IT::F64Divide:
+	case IT::F64Minimum:
+	case IT::F64Maximum:
+	case IT::F64CopySign:
+	case IT::I32Equal:
+	case IT::I32NotEqual:
+	case IT::I32LesserS:
+	case IT::I32LesserU:
+	case IT::I32GreaterS:
+	case IT::I32GreaterU:
+	case IT::I32LesserEqualS:
+	case IT::I32LesserEqualU:
+	case IT::I32GreaterEqualS:
+	case IT::I32GreaterEqualU:
+	case IT::I64Equal:
+	case IT::I64NotEqual:
+	case IT::I64LesserS:
+	case IT::I64LesserU:
+	case IT::I64GreaterS:
+	case IT::I64GreaterU:
+	case IT::I64LesserEqualS:
+	case IT::I64LesserEqualU:
+	case IT::I64GreaterEqualS:
+	case IT::I64GreaterEqualU:
+	case IT::F32Equal:
+	case IT::F32NotEqual:
+	case IT::F32Lesser:
+	case IT::F32Greater:
+	case IT::F32LesserEqual:
+	case IT::F32GreaterEqual:
+	case IT::F64Equal:
+	case IT::F64NotEqual:
+	case IT::F64Lesser:
+	case IT::F64Greater:
+	case IT::F64LesserEqual:
+	case IT::F64GreaterEqual:
+		return true;
+	default:
+		return false;
+	}
+}
+
+bool InstructionType::isUnary() const
+{
+	using IT = InstructionType;
+	switch (value) {
+	case IT::I32CountLeadingZeros:
+	case IT::I32CountTrailingZeros:
+	case IT::I32CountOnes:
+	case IT::I64CountLeadingZeros:
+	case IT::I64CountTrailingZeros:
+	case IT::I64CountOnes:
+	case IT::F32Absolute:
+	case IT::F32Negate:
+	case IT::F32SquareRoot:
+	case IT::F32Ceil:
+	case IT::F32Floor:
+	case IT::F32Truncate:
+	case IT::F32Nearest:
+	case IT::F64Absolute:
+	case IT::F64Negate:
+	case IT::F64SquareRoot:
+	case IT::F64Ceil:
+	case IT::F64Floor:
+	case IT::F64Truncate:
+	case IT::F64Nearest:
+	case IT::I32EqualZero:
+	case IT::I64EqualZero:
+		return true;
+	default:
+		return false;
+	}
+}
+
+bool InstructionType::isBlock() const
+{
+	switch (value) {
+	case InstructionType::Block:
+	case InstructionType::Loop:
+	case InstructionType::If:
+		return true;
+	default:
+		return false;
+	}
+}
+
+std::optional<ValType> InstructionType::resultType() const
+{
+	using IT = InstructionType;
+	switch (value) {
+	case IT::I32Add:
+	case IT::I32Subtract:
+	case IT::I32Multiply:
+	case IT::I32DivideS:
+	case IT::I32DivideU:
+	case IT::I32RemainderS:
+	case IT::I32RemainderU:
+	case IT::I32And:
+	case IT::I32Or:
+	case IT::I32Xor:
+	case IT::I32ShiftLeft:
+	case IT::I32ShiftRightS:
+	case IT::I32ShiftRightU:
+	case IT::I32RotateLeft:
+	case IT::I32RotateRight:
+		return ValType::I32;
+	case IT::I64Add:
+	case IT::I64Subtract:
+	case IT::I64Multiply:
+	case IT::I64DivideS:
+	case IT::I64DivideU:
+	case IT::I64RemainderS:
+	case IT::I64RemainderU:
+	case IT::I64And:
+	case IT::I64Or:
+	case IT::I64Xor:
+	case IT::I64ShiftLeft:
+	case IT::I64ShiftRightS:
+	case IT::I64ShiftRightU:
+	case IT::I64RotateLeft:
+	case IT::I64RotateRight:
+		return ValType::I64;
+	case IT::F32Add:
+	case IT::F32Subtract:
+	case IT::F32Multiply:
+	case IT::F32Divide:
+	case IT::F32Minimum:
+	case IT::F32Maximum:
+	case IT::F32CopySign:
+		return ValType::F32;
+	case IT::F64Add:
+	case IT::F64Subtract:
+	case IT::F64Multiply:
+	case IT::F64Divide:
+	case IT::F64Minimum:
+	case IT::F64Maximum:
+	case IT::F64CopySign:
+		return ValType::F64;
+	case IT::I32Equal:
+	case IT::I32NotEqual:
+	case IT::I32LesserS:
+	case IT::I32LesserU:
+	case IT::I32GreaterS:
+	case IT::I32GreaterU:
+	case IT::I32LesserEqualS:
+	case IT::I32LesserEqualU:
+	case IT::I32GreaterEqualS:
+	case IT::I32GreaterEqualU:
+	case IT::I64Equal:
+	case IT::I64NotEqual:
+	case IT::I64LesserS:
+	case IT::I64LesserU:
+	case IT::I64GreaterS:
+	case IT::I64GreaterU:
+	case IT::I64LesserEqualS:
+	case IT::I64LesserEqualU:
+	case IT::I64GreaterEqualS:
+	case IT::I64GreaterEqualU:
+	case IT::F32Equal:
+	case IT::F32NotEqual:
+	case IT::F32Lesser:
+	case IT::F32Greater:
+	case IT::F32LesserEqual:
+	case IT::F32GreaterEqual:
+	case IT::F64Equal:
+	case IT::F64NotEqual:
+	case IT::F64Lesser:
+	case IT::F64Greater:
+	case IT::F64LesserEqual:
+	case IT::F64GreaterEqual:
+		return ValType::I32;
+	case IT::I32CountLeadingZeros:
+	case IT::I32CountTrailingZeros:
+	case IT::I32CountOnes:
+		return ValType::I32;
+	case IT::I64CountLeadingZeros:
+	case IT::I64CountTrailingZeros:
+	case IT::I64CountOnes:
+		return ValType::I64;
+	case IT::F32Absolute:
+	case IT::F32Negate:
+	case IT::F32SquareRoot:
+	case IT::F32Ceil:
+	case IT::F32Floor:
+	case IT::F32Truncate:
+	case IT::F32Nearest:
+		return ValType::F32;
+	case IT::F64Absolute:
+	case IT::F64Negate:
+	case IT::F64SquareRoot:
+	case IT::F64Ceil:
+	case IT::F64Floor:
+	case IT::F64Truncate:
+	case IT::F64Nearest:
+		return ValType::F64;
+	case IT::I32EqualZero:
+	case IT::I64EqualZero:
+		return ValType::I32;
+	case IT::I32Const:
+		return ValType::I32;
+	case IT::I64Const:
+		return ValType::I64;
+	case IT::F32Const:
+		return ValType::F32;
+	case IT::F64Const:
+		return ValType::F64;
+	case IT::ReferenceNull:
+	case IT::ReferenceFunction:
+		return ValType::FuncRef;
+	default:
+		return {};
+	}
+}
+
+
+std::optional<ValType> InstructionType::operandType() const
+{
+	using IT = InstructionType;
+	switch (value) {
+	case IT::I32Add:
+	case IT::I32Subtract:
+	case IT::I32Multiply:
+	case IT::I32DivideS:
+	case IT::I32DivideU:
+	case IT::I32RemainderS:
+	case IT::I32RemainderU:
+	case IT::I32And:
+	case IT::I32Or:
+	case IT::I32Xor:
+	case IT::I32ShiftLeft:
+	case IT::I32ShiftRightS:
+	case IT::I32ShiftRightU:
+	case IT::I32RotateLeft:
+	case IT::I32RotateRight:
+		return ValType::I32;
+	case IT::I64Add:
+	case IT::I64Subtract:
+	case IT::I64Multiply:
+	case IT::I64DivideS:
+	case IT::I64DivideU:
+	case IT::I64RemainderS:
+	case IT::I64RemainderU:
+	case IT::I64And:
+	case IT::I64Or:
+	case IT::I64Xor:
+	case IT::I64ShiftLeft:
+	case IT::I64ShiftRightS:
+	case IT::I64ShiftRightU:
+	case IT::I64RotateLeft:
+	case IT::I64RotateRight:
+		return ValType::I64;
+	case IT::F32Add:
+	case IT::F32Subtract:
+	case IT::F32Multiply:
+	case IT::F32Divide:
+	case IT::F32Minimum:
+	case IT::F32Maximum:
+	case IT::F32CopySign:
+		return ValType::F32;
+	case IT::F64Add:
+	case IT::F64Subtract:
+	case IT::F64Multiply:
+	case IT::F64Divide:
+	case IT::F64Minimum:
+	case IT::F64Maximum:
+	case IT::F64CopySign:
+		return ValType::F64;
+	case IT::I32Equal:
+	case IT::I32NotEqual:
+	case IT::I32LesserS:
+	case IT::I32LesserU:
+	case IT::I32GreaterS:
+	case IT::I32GreaterU:
+	case IT::I32LesserEqualS:
+	case IT::I32LesserEqualU:
+	case IT::I32GreaterEqualS:
+	case IT::I32GreaterEqualU:
+		return ValType::I32;
+	case IT::I64Equal:
+	case IT::I64NotEqual:
+	case IT::I64LesserS:
+	case IT::I64LesserU:
+	case IT::I64GreaterS:
+	case IT::I64GreaterU:
+	case IT::I64LesserEqualS:
+	case IT::I64LesserEqualU:
+	case IT::I64GreaterEqualS:
+	case IT::I64GreaterEqualU:
+		return ValType::I64;
+	case IT::F32Equal:
+	case IT::F32NotEqual:
+	case IT::F32Lesser:
+	case IT::F32Greater:
+	case IT::F32LesserEqual:
+	case IT::F32GreaterEqual:
+		return ValType::F32;
+	case IT::F64Equal:
+	case IT::F64NotEqual:
+	case IT::F64Lesser:
+	case IT::F64Greater:
+	case IT::F64LesserEqual:
+	case IT::F64GreaterEqual:
+		return ValType::F64;
+	case IT::I32CountLeadingZeros:
+	case IT::I32CountTrailingZeros:
+	case IT::I32CountOnes:
+		return ValType::I32;
+	case IT::I64CountLeadingZeros:
+	case IT::I64CountTrailingZeros:
+	case IT::I64CountOnes:
+		return ValType::I64;
+	case IT::F32Absolute:
+	case IT::F32Negate:
+	case IT::F32SquareRoot:
+	case IT::F32Ceil:
+	case IT::F32Floor:
+	case IT::F32Truncate:
+	case IT::F32Nearest:
+		return ValType::F32;
+	case IT::F64Absolute:
+	case IT::F64Negate:
+	case IT::F64SquareRoot:
+	case IT::F64Ceil:
+	case IT::F64Floor:
+	case IT::F64Truncate:
+	case IT::F64Nearest:
+		return ValType::F64;
+	case IT::I32EqualZero:
+		return ValType::I32;
+	default:
+		return {};
+	} 
+}
+
 
 void Instruction::printBlockTypeInstruction(std::ostream& out) const
 {
@@ -1092,8 +1473,30 @@ void Instruction::print(std::ostream& out, const BufferSlice& data) const
 	}
 }
 
-std::optional<ValType> Instruction::constantType() const {
-	switch (type) {
+BlockTypeIndex Instruction::blockTypeIndex() const
+{
+	assert(type.isBlock());
+	return { BlockType::fromInt(operandA), operandB };
+}
+
+u32 Instruction::branchLabel() const {
+	// assert(isBranch());
+	return operandA;
+}
+
+u32 Instruction::localIndex() const {
+	// assert(isGetterSetter());
+	return operandA;
+}
+
+u32 Instruction::functionIndex() const {
+	assert(type == InstructionType::Call);
+	return operandA;
+}
+
+std::optional<ValType> InstructionType::constantType() const
+{
+	switch (value) {
 	case InstructionType::I32Const: return ValType::I32;
 	case InstructionType::I64Const: return ValType::I64;
 	case InstructionType::F32Const: return ValType::F32;
@@ -1106,12 +1509,16 @@ std::optional<ValType> Instruction::constantType() const {
 	return {};
 }
 
-const char* BlockType::name() const
+BlockTypeParameters BlockTypeIndex::parameters() const
 {
-	switch (value) {
-		case None: return "None";
-		case ValType: return "ValType";
-		case TypeIndex: return "TypeIndex";
-		default: return "<unknown block type>";
+	if (blockType == BlockType::TypeIndex) {
+		return { index };
 	}
+
+	return {};
+}
+
+BlockTypeResults BlockTypeIndex::results() const
+{
+	return { blockType, index };
 }

@@ -125,5 +125,18 @@ namespace WASM {
 		const char* name() const;
 	};
 
+	class BlockType : public Enum<BlockType> {
+	public:
+		enum TEnum {
+			None,
+			ValType,
+			TypeIndex,
+			NumberOfItems
+		};
 
+		using Enum<BlockType>::Enum;
+		BlockType(TEnum e) : Enum<BlockType>{ e } {}
+
+		const char* name() const;
+	};
 }

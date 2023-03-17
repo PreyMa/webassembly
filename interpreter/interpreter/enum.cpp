@@ -111,3 +111,13 @@ const char* NameSubsectionType::name() const
 	default: return "<unkown name subsection type>";
 	}
 }
+
+const char* BlockType::name() const
+{
+	switch (value) {
+	case None: return "None";
+	case ValType: return "ValType";
+	case TypeIndex: return "TypeIndex";
+	default: return "<unknown block type>";
+	}
+}

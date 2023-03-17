@@ -223,22 +223,30 @@ namespace WASM {
 		
 		static InstructionType fromWASMBytes(BufferIterator&);
 
+		bool isConstant() const;
+		bool isBinary() const;
+		bool isUnary() const;
+		bool isBlock() const;
+		std::optional<ValType> operandType() const;
+		std::optional<ValType> resultType() const;
+		std::optional<ValType> constantType() const;
+
 		const char* name() const;
 	};
 
-	class BlockType : public Enum<BlockType> {
-	public:
-		enum TEnum {
-			None,
-			ValType,
-			TypeIndex,
-			NumberOfItems
-		};
+	struct BlockTypeIndexBase {
+		BlockType blockType;
+		u32 index;
 
-		using Enum<BlockType>::Enum;
-		BlockType(TEnum e) : Enum<BlockType>{ e } {}
+		bool operator==(BlockType t) const { return blockType == t; }
+	};
 
-		const char* name() const;
+	using BlockTypeParameters = std::optional<u32>;
+	struct BlockTypeResults : public BlockTypeIndexBase {};
+
+	struct BlockTypeIndex : public BlockTypeIndexBase {
+		BlockTypeParameters parameters() const;
+		BlockTypeResults results() const;
 	};
 
 	class Instruction {
@@ -269,11 +277,17 @@ namespace WASM {
 
 		static Instruction fromWASMBytes(BufferIterator&);
 
-		bool isConstant() const;
-		std::optional<ValType> constantType() const;
 		void print(std::ostream&, const BufferSlice&) const;
+		bool isConstant() const { return type.isConstant(); }
+		std::optional<ValType> constantType() const { return type.constantType(); }
 
+		InstructionType opCode() const { return type; }
 		bool operator==(InstructionType t) const { return type == t; }
+
+		BlockTypeIndex blockTypeIndex() const;
+		u32 branchLabel() const;
+		u32 localIndex() const;
+		u32 functionIndex() const;
 
 	private:
 		static Instruction parseBlockTypeInstruction(InstructionType, BufferIterator&);

@@ -46,16 +46,19 @@ namespace WASM {
 	class FunctionType {
 	public:
 		FunctionType(std::vector<ValType> p, std::vector<ValType> r)
-			: parameters{ std::move(p) }, results{ std::move(r) } {}
+			: mParameters{ std::move(p) }, mResults{ std::move(r) } {}
 
 		FunctionType(FunctionType&&) = default;
+
+		const std::vector<ValType>& parameters() const { return mParameters; }
+		const std::vector<ValType>& results() const { return mResults; }
 
 		bool takesVoidReturnsVoid() const;
 		void print(std::ostream&) const;
 
 	private:
-		std::vector<ValType> parameters;
-		std::vector<ValType> results;
+		std::vector<ValType> mParameters;
+		std::vector<ValType> mResults;
 	};
 
 	class Limits {
@@ -178,6 +181,11 @@ namespace WASM {
 		FunctionCode(Expression c, std::vector<CompressedLocalTypes> l)
 			: code{ std::move(c) }, compressedLocalTypes{ std::move(l) } {}
 
+		const std::vector<CompressedLocalTypes>& locals() const { return compressedLocalTypes; }
+
+		auto begin() const { return code.begin(); }
+		auto end() const { return code.end(); }
+
 		void print(std::ostream& out) const;
 		void printBody(std::ostream& out) const;
 
@@ -207,6 +215,11 @@ namespace WASM {
 		std::optional<u32> startFunction;
 		std::vector<Element> elements;
 		std::vector<FunctionCode> functionCodes;
+
+		std::vector<u32> importedFunctions;
+		std::vector<TableType> importedTableTypes;
+		std::vector<MemoryType> importedMemoryTypes;
+		std::vector<Global> importedGlobalTypes;
 
 		std::string mName;
 		NameMap functionNames;
@@ -276,9 +289,25 @@ namespace WASM {
 		void validate(const ParsingState&);
 
 	private:
+		using ValueRecord = std::optional<ValType>;
+		using LabelTypes = std::variant<BlockTypeParameters, BlockTypeResults>;
+
+		struct ControlFrame {
+			InstructionType opCode;
+			BlockTypeIndex blockTypeIndex;
+			u32 height;
+			bool unreachable{ false };
+
+			LabelTypes labelTypes() const;
+		};
+
+
 		const ParsingState& s() const { assert(parsingState); return *parsingState; }
 
-		void setupConcatContext();
+		const FunctionType& functionTypeByIndex(u32);
+		const TableType& tableTypeByIndex(u32);
+		const MemoryType& memoryTypeByIndex(u32);
+		const Global& globalTypeByIndex(u32);
 
 		void validateFunction(u32);
 		void validateTableType(const TableType&);
@@ -289,16 +318,39 @@ namespace WASM {
 		void validateElementSegment(const Element&);
 
 		void validateConstantExpression(const Expression&, ValType);
-		void validateExpression(const Expression&);
+
+		// Expression validation algorithm
+		void setFunctionContext(const FunctionType&, const FunctionCode&);
+		void pushValue(ValType);
+		ValueRecord popValue();
+		ValueRecord popValue(ValueRecord);
+		void pushValues(const std::vector<ValType>&);
+		void pushValues(const BlockTypeParameters&);
+		void pushValues(const BlockTypeResults&);
+		void pushValues(const LabelTypes&);
+		std::vector<ValueRecord>& popValues(const std::vector<ValueRecord>&);
+		std::vector<ValueRecord>& popValues(const std::vector<ValType>&);
+		std::vector<ValueRecord>& popValues(const BlockTypeParameters&);
+		std::vector<ValueRecord>& popValues(const BlockTypeResults&);
+		std::vector<ValueRecord>& popValues(const LabelTypes&);
+		void pushControlFrame(InstructionType, BlockTypeIndex);
+		ControlFrame popControlFrame();
+		void setUnreachable();
+		void validateOpcode(Instruction);
+		void resetCachedReturnList(u32);
+
+		ValType localByIndex(u32) const;
 
 		void throwValidationError(const char*) const;
 
 		const ParsingState* parsingState{ nullptr };
 		std::unordered_set<std::string> exportNames;
 
-		std::vector<const FunctionType*> concatFunctions;
-		std::vector<const TableType*> concatTables;
-		std::vector<const MemoryType*> concatMemories;
-		std::vector<const Global*> concatGlobals;
+		std::vector<ValueRecord> valueStack;
+		std::vector<ControlFrame> controlStack;
+		std::vector<ValueRecord> cachedReturnList;
+
+		const FunctionType* currentFunctionType{ nullptr };
+		const std::vector<FunctionCode::CompressedLocalTypes>* currentLocals{ nullptr };
 	};
 }
