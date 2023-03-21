@@ -442,6 +442,7 @@ const char* InstructionType::name() const
 
 Instruction Instruction::fromWASMBytes(BufferIterator& it)
 {
+	bool is64BitMemoryInstruction= false;
 	using IT = InstructionType;
 	auto type = InstructionType::fromWASMBytes(it);
 	switch (type) {
@@ -514,32 +515,37 @@ Instruction Instruction::fromWASMBytes(BufferIterator& it)
 		auto tableIdx = it.nextU32();
 		return { type, elementIdx, tableIdx };
 	}
-	case IT::I32Load:
 	case IT::I64Load:
-	case IT::F32Load:
 	case IT::F64Load:
-	case IT::I32Load8s:
-	case IT::I32Load8u:
-	case IT::I32Load16s:
-	case IT::I32Load16u:
 	case IT::I64Load8s:
 	case IT::I64Load8u:
 	case IT::I64Load16s:
 	case IT::I64Load16u:
 	case IT::I64Load32s:
 	case IT::I64Load32u:
-	case IT::I32Store:
 	case IT::I64Store:
-	case IT::F32Store:
 	case IT::F64Store:
-	case IT::I32Store8:
-	case IT::I32Store16:
 	case IT::I64Store8:
 	case IT::I64Store16:
-	case IT::I64Store32: {
+	case IT::I64Store32:
+		is64BitMemoryInstruction = true;
+		// Fall through
+	case IT::I32Load:
+	case IT::F32Load:
+	case IT::I32Load8s:
+	case IT::I32Load8u:
+	case IT::I32Load16s:
+	case IT::I32Load16u:
+	case IT::I32Store:
+	case IT::F32Store:
+	case IT::I32Store8:
+	case IT::I32Store16:{
+
 		auto alignment = it.nextU32();
 		auto offset = it.nextU32();
-		if (!isPowerOfTwo(alignment)) {
+		auto alignmentInBytes = 0x1 << alignment;
+		auto typeSizeInBytes = is64BitMemoryInstruction ? 8 : 4;
+		if (alignmentInBytes > typeSizeInBytes) {
 			throw std::runtime_error{ "Memory alignment has to be power of 2" };
 		}
 		return { type, alignment, offset }; 
