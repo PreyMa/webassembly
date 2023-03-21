@@ -857,6 +857,66 @@ void ModuleCompiler::compileNumericBinaryInstruction(Instruction instruction) {
 	printBytecodeExpectingNoArgumentsIfReachable(instruction);
 }
 
+void ModuleCompiler::compileMemoryInstruction(Instruction instruction)
+{
+	auto opCode = instruction.opCode();
+	auto operandType = opCode.operandType();
+	auto resultType = opCode.resultType();
+
+	// Load type instruction
+	using IT = InstructionType;
+	auto isLoadInstruction = resultType.has_value();
+	if (isLoadInstruction) {
+		popValue(ValType::I32);
+		pushValue(*resultType);
+	}
+	// Store type instruction
+	else {
+		assert(operandType.has_value());
+		popValue(*operandType);
+		popValue(ValType::I32);
+	}
+
+	// Print simple bytecode
+	auto bytecode = instruction.toBytecode();
+	if (bytecode.has_value()) {
+		print(*bytecode);
+		printU32(instruction.memoryOffset());	
+	}
+
+	auto printNearOrFar = [&](Bytecode near, Bytecode far) {
+		auto offset = instruction.memoryOffset();
+		if (offset <= 255) {
+			print(near);
+			printU8(offset);
+			return;
+		}
+
+		print(far);
+		printU32(offset);
+	};
+
+	// Print bytecode as either near or short instruction
+	switch (opCode) {
+	case IT::I32Load:
+	case IT::F32Load:
+		printNearOrFar(Bytecode::I32LoadNear, Bytecode::I32LoadFar);
+		break;
+	case IT::I64Load:
+	case IT::F64Load:
+		printNearOrFar(Bytecode::I64LoadNear, Bytecode::I64LoadFar);
+		break;
+	case IT::I32Store:
+	case IT::F32Store:
+		printNearOrFar(Bytecode::I32StoreNear, Bytecode::I32StoreFar);
+		break;
+	case IT::I64Store:
+	case IT::F64Store:
+		printNearOrFar(Bytecode::I64StoreNear, Bytecode::I64StoreFar);
+		break;
+	}
+}
+
 void ModuleCompiler::compileInstruction(Instruction instruction, u32 instructionCounter)
 {
 	auto opCode = instruction.opCode();
@@ -872,6 +932,11 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 
 	if (opCode.isBinary()) {
 		compileNumericBinaryInstruction(instruction);
+		return;
+	}
+
+	if (opCode.isMemory()) {
+		compileMemoryInstruction(instruction);
 		return;
 	}
 

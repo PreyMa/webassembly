@@ -185,10 +185,10 @@ const char* Bytecode::name() const {
 		case TableGrow: return "TableGrow";
 		case TableSize: return "TableSize";
 		case TableFill: return "TableFill";
-		case I32Load: return "I32Load";
-		case I64Load: return "I64Load";
-		case F32Load: return "F32Load";
-		case F64Load: return "F64Load";
+		case I32LoadNear: return "I32LoadNear";
+		case I64LoadNear: return "I64LoadNear";
+		case I32LoadFar: return "F32LoadFar";
+		case I64LoadFar: return "F64LoadFar";
 		case I32Load8s: return "I32Load8s";
 		case I32Load8u: return "I32Load8u";
 		case I32Load16s: return "I32Load16s";
@@ -199,10 +199,10 @@ const char* Bytecode::name() const {
 		case I64Load16u: return "I64Load16u";
 		case I64Load32s: return "I64Load32s";
 		case I64Load32u: return "I64Load32u";
-		case I32Store: return "I32Store";
-		case I64Store: return "I64Store";
-		case F32Store: return "F32Store";
-		case F64Store: return "F64Store";
+		case I32StoreNear: return "I32StoreNear";
+		case I64StoreNear: return "I64StoreNear";
+		case I32StoreFar: return "F32StoreFar";
+		case I64StoreFar: return "F64StoreFar";
 		case I32Store8: return "I32Store8";
 		case I32Store16: return "I32Store16";
 		case I64Store8: return "I64Store8";
@@ -410,11 +410,14 @@ BytecodeArguments WASM::Bytecode::arguments() const
 		return BA::SingleU32;
 	case TableCopy:
 	case TableInit:
-	case I32Load:
-	case I64Load:
-	case F32Load:
-	case F64Load:
 		return BA::DualU32;
+	case I32LoadNear:
+	case I64LoadNear:
+	case I32StoreNear:
+	case I64StoreNear:
+		return BA::SingleU8;
+	case I32LoadFar:
+	case I64LoadFar:
 	case I32Load8s:
 	case I32Load8u:
 	case I32Load16s:
@@ -425,10 +428,8 @@ BytecodeArguments WASM::Bytecode::arguments() const
 	case I64Load16u:
 	case I64Load32s:
 	case I64Load32u:
-	case I32Store:
-	case I64Store:
-	case F32Store:
-	case F64Store:
+	case I32StoreFar:
+	case I64StoreFar:
 	case I32Store8:
 	case I32Store16:
 	case I64Store8:

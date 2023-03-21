@@ -251,6 +251,7 @@ namespace WASM {
 		void compileNumericConstantInstruction(Instruction);
 		void compileNumericUnaryInstruction(Instruction);
 		void compileNumericBinaryInstruction(Instruction);
+		void compileMemoryInstruction(Instruction);
 		void compileInstruction(Instruction, u32);
 		void resetCachedReturnList(u32);
 

@@ -224,6 +224,7 @@ namespace WASM {
 		bool isBinary() const;
 		bool isUnary() const;
 		bool isBlock() const;
+		bool isMemory() const;
 		bool requiresModuleInstance() const;
 		std::optional<ValType> operandType() const;
 		std::optional<ValType> resultType() const;
@@ -289,6 +290,7 @@ namespace WASM {
 		u32 branchLabel() const;
 		u32 localIndex() const;
 		u32 functionIndex() const;
+		u32 memoryOffset() const;
 
 		i32 asI32Constant() const;
 		u32 asIF32Constant() const;

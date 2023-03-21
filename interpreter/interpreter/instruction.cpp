@@ -954,6 +954,38 @@ bool InstructionType::isBlock() const
 	}
 }
 
+bool InstructionType::isMemory() const
+{
+	switch(value) {
+	case I32Load:
+	case I64Load:
+	case F32Load:
+	case F64Load:
+	case I32Load8s:
+	case I32Load8u:
+	case I32Load16s:
+	case I32Load16u:
+	case I64Load8s:
+	case I64Load8u:
+	case I64Load16s:
+	case I64Load16u:
+	case I64Load32s:
+	case I64Load32u:
+	case I32Store:
+	case I64Store:
+	case F32Store:
+	case F64Store:
+	case I32Store8:
+	case I32Store16:
+	case I64Store8:
+	case I64Store16:
+	case I64Store32:
+		return true;
+	default:
+		return false;
+	}
+}
+
 bool WASM::InstructionType::requiresModuleInstance() const
 {
 	switch (value) {
@@ -1124,6 +1156,24 @@ std::optional<ValType> InstructionType::resultType() const
 	case IT::ReferenceNull:
 	case IT::ReferenceFunction:
 		return ValType::FuncRef;
+	case I32Load:
+	case I32Load8s:
+	case I32Load8u:
+	case I32Load16s:
+	case I32Load16u:
+		return ValType::I32;
+	case I64Load:
+	case I64Load8s:
+	case I64Load8u:
+	case I64Load16s:
+	case I64Load16u:
+	case I64Load32s:
+	case I64Load32u:
+		return ValType::I64;
+	case F32Load:
+		return ValType::F32;
+	case F64Load:
+		return ValType::F64;
 	default:
 		return {};
 	}
@@ -1244,6 +1294,20 @@ std::optional<ValType> InstructionType::operandType() const
 		return ValType::F64;
 	case IT::I32EqualZero:
 		return ValType::I32;
+	case IT::I32Store:
+	case IT::I32Store8:
+	case IT::I32Store16:
+		return ValType::I32;
+	case IT::I64Store:
+	case IT::I64Store8:
+	case IT::I64Store16:
+	case IT::I64Store32:
+		return ValType::I64;
+	case IT::F64Store:
+		return ValType::F32;
+	case IT::F32Store:
+		return ValType::F64;
+
 	default:
 		return {};
 	} 
@@ -1555,6 +1619,12 @@ u32 Instruction::functionIndex() const {
 	return operandA;
 }
 
+u32 WASM::Instruction::memoryOffset() const
+{
+	assert(type.isMemory());
+	return operandB;
+}
+
 i32 Instruction::asI32Constant() const
 {
 	assert(type == InstructionType::I32Const);
@@ -1623,10 +1693,11 @@ std::optional<Bytecode> Instruction::toBytecode() const
 		case IT::TableGrow: return BA::TableGrow;
 		case IT::TableSize: return BA::TableSize;
 		case IT::TableFill: return BA::TableFill;
-		case IT::I32Load: return BA::I32Load;
-		case IT::I64Load: return BA::I64Load;
-		case IT::F32Load: return BA::F32Load;
-		case IT::F64Load: return BA::F64Load;
+		case IT::I32Load:
+		case IT::I64Load:
+		case IT::F32Load:
+		case IT::F64Load:
+			return {};
 		case IT::I32Load8s: return BA::I32Load8s;
 		case IT::I32Load8u: return BA::I32Load8u;
 		case IT::I32Load16s: return BA::I32Load16s;
@@ -1637,10 +1708,11 @@ std::optional<Bytecode> Instruction::toBytecode() const
 		case IT::I64Load16u: return BA::I64Load16u;
 		case IT::I64Load32s: return BA::I64Load32s;
 		case IT::I64Load32u: return BA::I64Load32u;
-		case IT::I32Store: return BA::I32Store;
-		case IT::I64Store: return BA::I64Store;
-		case IT::F32Store: return BA::F32Store;
-		case IT::F64Store: return BA::F64Store;
+		case IT::I32Store:
+		case IT::I64Store:
+		case IT::F32Store:
+		case IT::F64Store:
+			return {};
 		case IT::I32Store8: return BA::I32Store8;
 		case IT::I32Store16: return BA::I32Store16;
 		case IT::I64Store8: return BA::I64Store8;
