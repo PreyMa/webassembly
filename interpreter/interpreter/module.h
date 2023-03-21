@@ -38,6 +38,8 @@ namespace WASM {
 		u32 localsSizeInBytes() const;
 		bool requiresModuleInstance() const;
 
+		Nullable<const std::string> lookupName(const Module&);
+
 	private:
 		void uncompressLocalTypes(const std::vector<CompressedLocalTypes>&);
 
@@ -131,7 +133,8 @@ namespace WASM {
 			std::vector<FunctionImport> imFs,
 			std::vector<TableImport> imTs,
 			std::vector<MemoryImport> imMs,
-			std::vector<GlobalImport> imGs
+			std::vector<GlobalImport> imGs,
+			ParsingState::NameMap fns
 		);
 		Module(Module&& m) = default;
 
@@ -140,8 +143,9 @@ namespace WASM {
 
 		Nullable<Function> functionByIndex(u32);
 
-		std::optional<ExportItem> exportByName(const std::string&, ExportType);
+		std::optional<ExportItem> exportByName(const std::string&, ExportType) const;
 		Nullable<Function> exportedFunctionByName(const std::string&);
+		Nullable<const std::string> functionNameByIndex(u32) const;
 
 	private:
 		friend class ModuleCompiler;
@@ -171,6 +175,8 @@ namespace WASM {
 		u32 numImportedTables;
 		u32 numImportedMemories;
 		u32 numImportedGlobals;
+
+		ParsingState::NameMap functionNameMap;
 	};
 
 	class ModuleLinker {

@@ -91,7 +91,8 @@ Module ModuleParser::toModule()
 		std::move(importedFunctions),
 		std::move(importedTableTypes),
 		std::move(importedMemoryTypes),
-		std::move(importedGlobalTypes)
+		std::move(importedGlobalTypes),
+		std::move(functionNames)
 	};
 }
 

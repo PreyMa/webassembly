@@ -71,6 +71,11 @@ bool WASM::BytecodeFunction::requiresModuleInstance() const
 	return false;
 }
 
+Nullable<const std::string> WASM::BytecodeFunction::lookupName(const Module& module)
+{
+	return module.functionNameByIndex(mIndex);
+}
+
 void WASM::BytecodeFunction::uncompressLocalTypes(const std::vector<CompressedLocalTypes>& compressedLocals)
 {
 	// Count the parameters and locals
@@ -181,7 +186,21 @@ std::optional<u64> Memory::maxBytes() const {
 	return {};
 }
 
-Module::Module(Buffer b, std::string p, std::string n, std::vector<FunctionType> ft, std::vector<BytecodeFunction> fs, std::vector<FunctionTable> ts, std::vector<Memory> ms, ExportTable ex, std::vector<FunctionImport> imFs, std::vector<TableImport> imTs, std::vector<MemoryImport> imMs, std::vector<GlobalImport> imGs)
+Module::Module(
+	Buffer b,
+	std::string p,
+	std::string n,
+	std::vector<FunctionType> ft,
+	std::vector<BytecodeFunction> fs,
+	std::vector<FunctionTable> ts,
+	std::vector<Memory> ms,
+	ExportTable ex,
+	std::vector<FunctionImport> imFs,
+	std::vector<TableImport> imTs,
+	std::vector<MemoryImport> imMs,
+	std::vector<GlobalImport> imGs,
+	ParsingState::NameMap fns
+)
 	: path{ std::move(p) },
 	mName{ std::move(n) },
 	data{ std::move(b) },
@@ -197,7 +216,8 @@ Module::Module(Buffer b, std::string p, std::string n, std::vector<FunctionType>
 			std::move(imGs)
 		}
 	},
-	exports{ std::move(ex) }
+	exports{ std::move(ex) },
+	functionNameMap{ std::move(fns) }
 {
 	numImportedFunctions = unlinkedImports->importedFunctions.size();
 	numImportedTables = unlinkedImports->importedTables.size();
@@ -221,7 +241,7 @@ Nullable<Function> WASM::Module::functionByIndex(u32 idx)
 	return functions[idx];
 }
 
-std::optional<ExportItem> WASM::Module::exportByName(const std::string& name, ExportType type)
+std::optional<ExportItem> WASM::Module::exportByName(const std::string& name, ExportType type) const
 {
 	auto findFunction = exports.find(name);
 	if (findFunction == exports.end()) {
@@ -244,6 +264,16 @@ Nullable<Function> Module::exportedFunctionByName(const std::string& name)
 	}
 
 	return functionByIndex(exp->mIndex);
+}
+
+Nullable<const std::string> WASM::Module::functionNameByIndex(u32 functionIdx) const
+{
+	auto fnd = functionNameMap.find(functionIdx);
+	if (fnd == functionNameMap.end()) {
+		return {};
+	}
+
+	return fnd->second;
 }
 
 /*void ModuleLinker::link()
@@ -338,7 +368,10 @@ void ModuleCompiler::compileFunction(BytecodeFunction& function)
 	if (modName.size() > 20) {
 		modName = "..." + modName.substr(modName.size() - 17);
 	}
-	std::cout << "Compiled function " << modName << " " << function.index() << std::endl;
+
+	auto maybeFunctionName = function.lookupName(module);
+	auto* functionName = maybeFunctionName.has_value() ? maybeFunctionName->c_str() : "<unknown name>";
+	std::cout << "Compiled function " << modName << " :: " << functionName << " (index " << function.index() << ")" << std::endl;
 	printBytecode(std::cout);
 }
 
