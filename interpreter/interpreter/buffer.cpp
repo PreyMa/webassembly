@@ -16,7 +16,7 @@ public:
 	std::enable_if_t<!std::is_unsigned<TSFINAEHelper>::value, T> decode(TStream& stream) const {
 		T value = 0;
 		u32 shift = 0;
-		for (u32 i = 0; i != ByteCount; i++) {
+		for (u32 i = 0; i != ByteCount+2; i++) {
 			auto byte = stream.nextU8();
 			value |= (byte & 0x7F) << shift;
 			if ((byte & 0x80) == 0) {
@@ -36,7 +36,7 @@ public:
 	std::enable_if_t<std::is_unsigned<TSFINAEHelper>::value, T> decode(TStream& stream) const {
 		T value = 0;
 		u32 shift = 0;
-		for (u32 i = 0; i != 4; i++) {
+		for (u32 i = 0; i != ByteCount+2; i++) {
 			auto byte = stream.nextU8();
 			value |= (byte & 0x7F) << shift;
 			if ((byte & 0x80) == 0) {
