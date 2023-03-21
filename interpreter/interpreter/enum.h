@@ -142,4 +142,20 @@ namespace WASM {
 
 		const char* name() const;
 	};
+
+	class ImportType : public Enum<ImportType> {
+	public:
+		enum TEnum {
+			FunctionImport = 0x00,
+			TableImport = 0x01,
+			MemoryImport = 0x02,
+			GlobalImport = 0x03,
+			NumberOfItems
+		};
+
+		using Enum<ImportType>::Enum;
+		ImportType(TEnum e) : Enum<ImportType>{ e } {}
+
+		const char* name() const;
+	};
 }

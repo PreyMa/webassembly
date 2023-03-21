@@ -463,7 +463,7 @@ MemoryType ModuleParser::parseMemoryType()
 	return { parseLimits()};
 }
 
-GlobalType ModuleParser::parseGlobal()
+GlobalType ModuleParser::parseGlobalType()
 {
 	if (!hasNext(3)) {
 		throwParsingError("Not enough bytes to parse global");
@@ -483,9 +483,15 @@ GlobalType ModuleParser::parseGlobal()
 		throwParsingError("Invalid mutability flag for global. Expected 0x00 or 0x01");
 	}
 
+	return { valType, isMutable };
+}
+
+DeclaredGlobal ModuleParser::parseGlobal()
+{
+	auto globalType = parseGlobalType();
 	auto initExpressionCode = parseInitExpression();
 
-	return { valType, isMutable, initExpressionCode };
+	return { globalType, initExpressionCode };
 }
 
 Limits ModuleParser::parseLimits()
@@ -768,9 +774,9 @@ void TableType::print(std::ostream& out) const
 	mLimits.print(out);
 }
 
-void GlobalType::print(std::ostream& out) const
+void DeclaredGlobal::print(std::ostream& out) const
 {
-	out << "GlobalType: " << (mIsMutable ? "mutable " : "const ") << mType.name() << " ";
+	out << "DeclaredGlobal: " << (mType.isMutable() ? "mutable " : "const ") << mType.valType().name() << " ";
 	mInitExpression.printBytes(out);
 }
 
@@ -1027,7 +1033,7 @@ void ModuleValidator::validateStartFunction(u32 idx)
 	std::cout << "Validated start function" << std::endl;
 }
 
-void ModuleValidator::validateGlobal(const GlobalType& global)
+void ModuleValidator::validateGlobal(const DeclaredGlobal& global)
 {
 	validateConstantExpression(global.initExpression(), global.valType());
 }

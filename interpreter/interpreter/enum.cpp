@@ -630,3 +630,14 @@ u32 WASM::BytecodeArguments::sizeInBytes() const
 		default: assert(false);
 	}
 }
+
+const char* ImportType::name() const
+{
+	switch (value) {
+		case FunctionImport: return "FunctionImport";
+		case TableImport: return "TableImport";
+		case MemoryImport: return "MemoryImport";
+		case GlobalImport: return "GlobalImport";
+		default: return "<unknown import type>";
+	}
+}

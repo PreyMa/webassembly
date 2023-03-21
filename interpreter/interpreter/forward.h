@@ -13,6 +13,7 @@ namespace WASM {
 	class TableType;
 	class MemoryType;
 	class GlobalType;
+	class DeclaredGlobal;
 	class Export;
 	class Element;
 	class FunctionCode;

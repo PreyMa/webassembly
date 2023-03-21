@@ -105,17 +105,29 @@ namespace WASM {
 
 	class GlobalType {
 	public:
-		GlobalType(ValType t, bool m, Expression c)
-			: mType{ t }, mIsMutable{ m }, mInitExpression{ std::move(c) } {}
+		GlobalType(ValType t, bool m)
+			: mType{ t }, mIsMutable{ m } {}
 
+		bool isMutable() const { return mIsMutable; }
 		const ValType valType() const { return mType; }
+
+	private:
+		ValType mType;
+		bool mIsMutable;
+	};
+
+	class DeclaredGlobal {
+	public:
+		DeclaredGlobal(GlobalType t, Expression c)
+			: mType{ t }, mInitExpression{ std::move(c) } {}
+
+		const ValType valType() const { return mType.valType(); }
 		const Expression& initExpression() const { return mInitExpression; }
 
 		void print(std::ostream& out) const;
 
 	private:
-		ValType mType;
-		bool mIsMutable;
+		GlobalType mType;
 		Expression mInitExpression;
 	};
 
@@ -246,7 +258,7 @@ namespace WASM {
 		std::vector<u32> functions;
 		std::vector<TableType> tableTypes;
 		std::vector<MemoryType> memoryTypes;
-		std::vector<GlobalType> globals;
+		std::vector<DeclaredGlobal> globals;
 		std::vector<Export> exports;
 		std::optional<u32> startFunction;
 		std::vector<Element> elements;
@@ -305,7 +317,8 @@ namespace WASM {
 
 		TableType parseTableType();
 		MemoryType parseMemoryType();
-		GlobalType parseGlobal();
+		GlobalType parseGlobalType();
+		DeclaredGlobal parseGlobal();
 		Limits parseLimits();
 		Expression parseInitExpression();
 		Export parseExport();
@@ -337,7 +350,7 @@ namespace WASM {
 		void validateMemoryType(const MemoryType&);
 		void validateExport(const Export&);
 		void validateStartFunction(u32);
-		void validateGlobal(const GlobalType&);
+		void validateGlobal(const DeclaredGlobal&);
 		void validateElementSegment(const Element&);
 
 		void validateConstantExpression(const Expression&, ValType);
