@@ -133,6 +133,7 @@ void ModuleParser::parseSection()
 	switch (type) {
 	case SectionType::Custom: parseCustomSection(length); break;
 	case SectionType::Type: parseTypeSection(); break;
+	case SectionType::Import: parseImportSection(); break;
 	case SectionType::Function: parseFunctionSection(); break;
 	case SectionType::Table: parseTableSection(); break;
 	case SectionType::Memory: parseMemorySection(); break;
@@ -363,6 +364,46 @@ void ModuleParser::parseCodeSection()
 		std::cout << std::endl;
 
 		functionCodes.emplace_back(std::move(code));
+	}
+}
+
+void ModuleParser::parseImportSection()
+{
+	auto numImports = nextU32();
+	
+	std::cout << "-> Parsed import section containing " << numImports << " import items" << std::endl;
+
+	for (u32 i = 0; i != numImports; i++) {
+		auto moduleName = parseNameString();
+		auto itemName = parseNameString();
+
+		auto importType = ImportType::fromInt(nextU8());
+		std::cout << "  - " << importType.name() << ": " << moduleName << " :: " << itemName << std::endl;
+
+		switch (importType) {
+		case ImportType::FunctionImport: {
+			auto funcIdx = nextU32();
+			importedFunctions.emplace_back(FunctionImport{ std::move(moduleName), std::move(itemName), funcIdx });
+			break;
+		}
+		case ImportType::TableImport: {
+			auto tableType= parseTableType();
+			importedTableTypes.emplace_back(TableImport{ std::move(moduleName), std::move(itemName), tableType });
+			break;
+		}
+		case ImportType::MemoryImport: {
+			auto memoryType = parseMemoryType();
+			importedMemoryTypes.emplace_back(MemoryImport{ std::move(moduleName), std::move(itemName), memoryType });
+			break;
+		}
+		case ImportType::GlobalImport: {
+			auto globalType = parseGlobalType();
+			importedGlobalTypes.emplace_back(GlobalImport{ std::move(moduleName), std::move(itemName), globalType });
+			break;
+		}
+		default:
+			assert(false);
+		}
 	}
 }
 

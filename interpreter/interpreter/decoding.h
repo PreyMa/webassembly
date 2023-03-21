@@ -232,6 +232,9 @@ namespace WASM {
 	};
 
 	struct GlobalImport final : public Imported {
+		GlobalImport(std::string m, std::string n, GlobalType tp)
+			: Imported{ std::move(m), std::move(n) }, globalType{ tp }, resolvedGlobal32{} {}
+
 		GlobalType globalType;
 	private:
 		union {
@@ -308,6 +311,7 @@ namespace WASM {
 		void parseStartSection();
 		void parseElementSection();
 		void parseCodeSection();
+		void parseImportSection();
 
 		NameMap parseNameMap();
 		IndirectNameMap parseIndirectNameMap();
