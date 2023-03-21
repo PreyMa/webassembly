@@ -40,9 +40,9 @@ u32 BytecodeFunction::operandStackSectionOffsetInBytes() const
 	auto& lastLocal = uncompressedLocals.back();
 	auto byteOffset= lastLocal.offset + lastLocal.type.sizeInBytes();
 
-	// Manually add the size of FP + SP, if there are only parameters
+	// Manually add the size of FP + SP+ MP, if there are only parameters
 	if (!hasLocals()) {
-		byteOffset += 16;
+		byteOffset += 24;
 	}
 
 	return byteOffset;
@@ -58,6 +58,17 @@ u32 BytecodeFunction::localsSizeInBytes() const
 	u32 endLocalsByteOffset = operandStackSectionOffsetInBytes();
 
 	return endLocalsByteOffset - beginLocalsByteOffset;
+}
+
+bool WASM::BytecodeFunction::requiresModuleInstance() const
+{
+	for (auto& ins : code) {
+		if (ins.opCode().requiresModuleInstance()) {
+			return true;
+		}
+	}
+
+	return false;
 }
 
 void WASM::BytecodeFunction::uncompressLocalTypes(const std::vector<CompressedLocalTypes>& compressedLocals)
@@ -78,8 +89,8 @@ void WASM::BytecodeFunction::uncompressLocalTypes(const std::vector<CompressedLo
 		byteOffset += param.sizeInBytes();
 	}
 
-	// Leave space for stack and frame pointer
-	byteOffset += 16;
+	// Leave space for stack, frame and module pointer
+	byteOffset += 24;
 
 	// Decompress and put each local
 	for (auto& pack : compressedLocals) {
@@ -309,11 +320,12 @@ void ModuleCompiler::compileFunction(BytecodeFunction& function)
 	auto typeIdx = function.typeIndex();
 	controlStack.emplace_back(InstructionType::NoOperation, BlockTypeIndex{ BlockType::TypeIndex, typeIdx }, 0, 0, false, 0);
 
-	// Print entry bytecode if the function has any locals
+	// Print entry bytecode if the function has any locals or requires the module instance
 	auto localsSizeInBytes = function.localsSizeInBytes();
-	if (localsSizeInBytes > 0) {
+	if (localsSizeInBytes > 0 || function.requiresModuleInstance()) {
 		assert(localsSizeInBytes % 4 == 0);
 		print(Bytecode::Entry);
+		printPointer(&module);
 		printU32(localsSizeInBytes / 4);
 	}
 
@@ -832,7 +844,6 @@ void ModuleCompiler::compileNumericUnaryInstruction(Instruction instruction)
 
 	printBytecodeExpectingNoArgumentsIfReachable(instruction);
 }
-
 
 void ModuleCompiler::compileNumericBinaryInstruction(Instruction instruction) {
 	auto opCode = instruction.opCode();

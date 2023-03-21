@@ -376,7 +376,7 @@ BytecodeArguments WASM::Bytecode::arguments() const
 	case ReturnMany: return BA::SingleU32;
 	case Call: return BA::SingleU64SingleU32;
 	case CallIndirect: return BA::DualU32;
-	case Entry: return BA::SingleU32;
+	case Entry: return BA::SingleU64SingleU32;
 	case I32Drop:
 	case I64Drop:
 	case I32Select:
@@ -407,14 +407,14 @@ BytecodeArguments WASM::Bytecode::arguments() const
 	case TableGrow:
 	case TableSize:
 	case TableFill:
-		return BA::SingleU64;
+		return BA::SingleU32;
 	case TableCopy:
 	case TableInit:
-		return BA::DualU64;
 	case I32Load:
 	case I64Load:
 	case F32Load:
 	case F64Load:
+		return BA::DualU32;
 	case I32Load8s:
 	case I32Load8u:
 	case I32Load16s:
@@ -434,13 +434,13 @@ BytecodeArguments WASM::Bytecode::arguments() const
 	case I64Store8:
 	case I64Store16:
 	case I64Store32:
-		return BA::SingleU64SingleU32;
+		return BA::SingleU32;
 	case MemorySize:
 	case MemoryGrow:
 	case DataDrop:
 	case MemoryFill:
 	case MemoryCopy:
-		return BA::SingleU64;
+		return BA::None;
 	case MemoryInit: return BA::DualU64;
 	case I32Const: return BA::SingleU32;
 	case I64Const: return BA::SingleU64;

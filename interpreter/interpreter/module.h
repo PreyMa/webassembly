@@ -36,6 +36,7 @@ namespace WASM {
 		bool hasLocals() const;
 		u32 operandStackSectionOffsetInBytes() const;
 		u32 localsSizeInBytes() const;
+		bool requiresModuleInstance() const;
 
 	private:
 		void uncompressLocalTypes(const std::vector<CompressedLocalTypes>&);

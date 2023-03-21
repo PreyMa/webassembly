@@ -224,6 +224,7 @@ namespace WASM {
 		bool isBinary() const;
 		bool isUnary() const;
 		bool isBlock() const;
+		bool requiresModuleInstance() const;
 		std::optional<ValType> operandType() const;
 		std::optional<ValType> resultType() const;
 		std::optional<ValType> constantType() const;

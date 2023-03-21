@@ -954,6 +954,53 @@ bool InstructionType::isBlock() const
 	}
 }
 
+bool WASM::InstructionType::requiresModuleInstance() const
+{
+	switch (value) {
+	case CallIndirect:
+	case TableGet:
+	case TableSet:
+	case TableInit:
+	case ElementDrop:
+	case TableCopy:
+	case TableGrow:
+	case TableSize:
+	case TableFill:
+	case I32Load:
+	case I64Load:
+	case F32Load:
+	case F64Load:
+	case I32Load8s:
+	case I32Load8u:
+	case I32Load16s:
+	case I32Load16u:
+	case I64Load8s:
+	case I64Load8u:
+	case I64Load16s:
+	case I64Load16u:
+	case I64Load32s:
+	case I64Load32u:
+	case I32Store:
+	case I64Store:
+	case F32Store:
+	case F64Store:
+	case I32Store8:
+	case I32Store16:
+	case I64Store8:
+	case I64Store16:
+	case I64Store32:
+	case MemorySize:
+	case MemoryGrow:
+	case MemoryInit:
+	case DataDrop:
+	case MemoryCopy:
+	case MemoryFill:
+		return true;
+	default:
+		return false;
+	}
+}
+
 std::optional<ValType> InstructionType::resultType() const
 {
 	using IT = InstructionType;
