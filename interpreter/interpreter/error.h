@@ -1,6 +1,7 @@
 #pragma once
 
 #include<exception>
+#include<optional>
 #include<string>
 
 #include "util.h"
@@ -40,6 +41,21 @@ namespace WASM {
 
 	private:
 		std::string fileName;
+	};
+
+	class CompileError : public Error {
+	public:
+		CompileError(std::string mod, std::string m)
+			: Error{ std::move(m) }, moduleName{ std::move(mod) } {}
+
+		CompileError(std::string mod, u32 fi, std::string m)
+			: Error{ std::move(m) }, moduleName{ std::move(mod) }, functionIndex{ fi } {}
+
+		virtual void print(std::ostream& o) const override;
+
+	private:
+		std::string moduleName;
+		std::optional<u32> functionIndex;
 	};
 
 	std::ostream& operator<<(std::ostream&, const Error&);

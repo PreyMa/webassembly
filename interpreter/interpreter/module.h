@@ -1,326 +1,232 @@
+
 #pragma once
 
-#include <unordered_map>
-#include <unordered_set>
-#include <optional>
-#include <variant>
-
-#include "nullable.h"
-#include "instruction.h"
+#include "decoding.h"
+#include "bytecode.h"
+#include "arraylist.h"
 
 namespace WASM {
 
 	class Function {
+	public:
+		virtual ~Function() = default;
+
+		virtual Nullable<const BytecodeFunction> asBytecodeFunction() const { return {}; }
+
 	private:
-		std::vector<u8> code;
 	};
 
+	class BytecodeFunction : public Function {
+	public:
+		struct LocalOffset {
+			ValType type;
+			u32 offset;
+		};
+
+		BytecodeFunction(u32 idx, u32 ti, FunctionType& t, FunctionCode&& c);
+
+		virtual Nullable<const BytecodeFunction> asBytecodeFunction() const { return *this; }
+
+		u32 index() const { return mIndex; }
+		u32 typeIndex() const { return mTypeIndex; }
+		const Expression& expression() const { return code; }
+		const FunctionType& functionType() const { return type; }
+
+		std::optional<LocalOffset> localByIndex(u32) const;
+		bool hasLocals() const;
+		u32 operandStackSectionOffsetInBytes() const;
+		u32 localsSizeInBytes() const;
+
+	private:
+		void uncompressLocalTypes(const std::vector<CompressedLocalTypes>&);
+
+		u32 mIndex;
+		u32 mTypeIndex;
+		FunctionType& type;
+		Expression code;
+		std::vector<LocalOffset> uncompressedLocals;
+	};
+
+	class HostFunction : public Function {
+
+	};
+
+	class FunctionTable {
+	public:
+		FunctionTable(u32, const TableType&);
+
+		i32 grow(i32, Nullable<Function>);
+
+		void init(const DecodedElement&, u32, u32);
+
+	private:
+		u32 index;
+		ValType type;
+		Limits limits;
+		std::vector<Nullable<Function>> table;
+	};
+
+	class DecodedElement {
+	public:
+		DecodedElement(u32 idx, ElementMode m, ValType t, u32 i, u32 o, std::vector<u32> f)
+			: index{ idx }, mMode{ m }, refType{ t }, tableIndex{ i }, tableOffset{ o }, mFunctionIndices{ std::move(f) } {}
+
+		void initTableIfActive(std::vector<FunctionTable>&);
+
+	private:
+		u32 index;
+		ElementMode mMode;
+		ValType refType;
+		u32 tableIndex;
+		u32 tableOffset;
+		std::vector<u32> mFunctionIndices;
+	};
+
+	class Memory {
+	public:
+		static constexpr u64 PageSize = 65536;
+
+		Memory(u32, Limits l);
+
+		i32 grow(i32);
+
+		u64 minBytes() const;
+		std::optional<u64> maxBytes() const;
+
+	private:
+		u32 index;
+		Limits limits;
+		std::vector<u8> data;
+	};
+
+	template<typename T>
+	class Global {
+	public:
+		Global() = default;
+
+		template<typename U>
+		U& get() const {
+			static_assert(sizeof(U) <= siezof(T) && alignof(U) <= alignof(T));
+			return *(U*)(&storage);
+		}
+
+	private:
+		T storage{ 0 };
+	};
+
+	using ExportTable = std::unordered_map<std::string, ExportItem>;
 
 	class Module {
 	public:
-		Module(Buffer b, std::string n) : name {std::move(n)}, data{ std::move(b) } {}
+		Module(
+			Buffer b,
+			std::string p,
+			std::string n,
+			std::vector<FunctionType> ft,
+			std::vector<BytecodeFunction> fs,
+			std::vector<FunctionTable> ts,
+			std::vector<Memory> ms,
+			ExportTable ex,
+			std::vector<FunctionImport> imFs,
+			std::vector<TableImport> imTs,
+			std::vector<MemoryImport> imMs,
+			std::vector<GlobalImport> imGs
+		);
 		Module(Module&& m) = default;
 
-	private:
-		std::string name;
-		Buffer data;
-	};
-
-	class Expression {
-	public:
-		Expression(BufferSlice b, std::vector<Instruction> i)
-			: mBytes{ b }, mInstructions{ std::move(i) } {}
-
-		void printBytes(std::ostream&) const;
-		void print(std::ostream&) const;
-
-		auto size() const { return mInstructions.size(); }
-		auto begin() const { return mInstructions.cbegin(); }
-		auto end() const { return mInstructions.cend(); }
-
-	private:
-		BufferSlice mBytes;
-		std::vector<Instruction> mInstructions;
-	};
-
-	class FunctionType {
-	public:
-		FunctionType(std::vector<ValType> p, std::vector<ValType> r)
-			: mParameters{ std::move(p) }, mResults{ std::move(r) } {}
-
-		FunctionType(FunctionType&&) = default;
-
-		const std::vector<ValType>& parameters() const { return mParameters; }
-		const std::vector<ValType>& results() const { return mResults; }
-
-		bool takesVoidReturnsVoid() const;
-		void print(std::ostream&) const;
-
-	private:
-		std::vector<ValType> mParameters;
-		std::vector<ValType> mResults;
-	};
-
-	class Limits {
-	public:
-		Limits( u32 i ) : min{ i }, max{} {}
-		Limits( u32 i, u32 a ) : min{ i }, max{ a } {}
-
-		void print(std::ostream&) const;
-		bool isValid(u32 range) const;
-	
-	private:
-		u32 min;
-		std::optional<u32> max;
-	};
-
-	class TableType {
-	public:
-		TableType(ValType et, Limits l) : mElementReferenceType{ et }, mLimits{ l } {
-			assert( mElementReferenceType.isReference() );
-		}
-
-		const ValType valType() const { return mElementReferenceType; }
-		const Limits& limits() const { return mLimits; }
-
-		void print(std::ostream&) const;
-
-	private:
-		ValType mElementReferenceType;
-		Limits mLimits;
-	};
-
-	class MemoryType {
-	public:
-		MemoryType(Limits l) : mLimits{ l } {}
-
-		const Limits& limits() const { return mLimits; }
-
-		void print(std::ostream& out) const { mLimits.print( out ); }
-
-	private:
-		Limits mLimits;
-	};
-
-	class Global {
-	public:
-		Global(ValType t, bool m, Expression c)
-			: mType{ t }, mIsMutable{ m }, mInitExpression{ std::move(c) } {}
-
-		const ValType valType() const { return mType; }
-		const Expression& initExpression() const { return mInitExpression; }
-
-		void print(std::ostream& out) const;
-
-	private:
-		ValType mType;
-		bool mIsMutable;
-		Expression mInitExpression;
-	};
-
-	class Export {
-	public:
-		Export(std::string n, ExportType e, u32 i)
-			: mName{ std::move(n) }, mExportType{ e }, mIndex{ i } {}
-
 		const std::string& name() const { return mName; }
+		bool needsLinking() const { return unlinkedImports.has_value(); }
 
-		bool isValid(u32,u32,u32, u32) const;
-		void print(std::ostream& out) const;
+		Nullable<Function> functionByIndex(u32);
+
+		std::optional<ExportItem> exportByName(const std::string&, ExportType);
+		Nullable<Function> exportedFunctionByName(const std::string&);
 
 	private:
-		std::string mName;
-		ExportType mExportType;
-		u32 mIndex;
-	};
+		friend class ModuleCompiler;
 
-	class Element {
-	public:
-		struct TablePosition {
-			u32 tableIndex;
-			Expression tableOffset;
+		struct UnlinkedImports {
+			std::vector<FunctionImport> importedFunctions;
+			std::vector<TableImport> importedTables;
+			std::vector<MemoryImport> importedMemories;
+			std::vector<GlobalImport> importedGlobals;
 		};
-
-		Element( ElementMode m, ValType r, std::vector<u32> f )
-			: mMode{ m }, refType{r}, mInitExpressions{ std::move(f) } {}
-
-		Element(ElementMode m, ValType r, u32 ti, Expression to, std::vector<u32> f)
-			: mMode{ m }, refType{ r }, mTablePosition{ {ti, std::move(to)} }, mInitExpressions{ std::move(f) } {}
-
-		Element(ElementMode m, ValType r, std::vector<Expression> e)
-			: mMode{ m }, refType{ r }, mInitExpressions{ std::move(e) } {}
-
-		Element(ElementMode m, ValType r, u32 ti, Expression to, std::vector<Expression> e)
-			: mMode{ m }, refType{ r }, mTablePosition{ {ti, std::move(to)} }, mInitExpressions{ std::move(e) } {}
-
-		u32 tableIndex() const {
-			return mTablePosition.has_value() ? mTablePosition->tableIndex : 0;
-		}
-
-		ElementMode mode() const { return mMode; }
-		ValType valType() const { return refType; }
-		const std::optional<TablePosition>& tablePosition() const { return mTablePosition; }
-		Nullable<const std::vector<Expression>> initExpressions() const;
-
-		void print(std::ostream& out) const;
-
-	private:
-		ElementMode mMode;
-		ValType refType;
-		std::optional<TablePosition> mTablePosition;
-		std::variant<std::vector<u32>, std::vector<Expression>> mInitExpressions;
-	};
-
-	class FunctionCode {
-	public:
-		struct CompressedLocalTypes {
-			u32 count;
-			ValType type;
-		};
-
-		FunctionCode(Expression c, std::vector<CompressedLocalTypes> l)
-			: code{ std::move(c) }, compressedLocalTypes{ std::move(l) } {}
-
-		const std::vector<CompressedLocalTypes>& locals() const { return compressedLocalTypes; }
-
-		auto begin() const { return code.begin(); }
-		auto end() const { return code.end(); }
-
-		void print(std::ostream& out) const;
-		void printBody(std::ostream& out) const;
-
-	private:
-		Expression code;
-		std::vector<CompressedLocalTypes> compressedLocalTypes;
-	};
-
-	class ParsingState {
-	public:
-		using NameMap = std::unordered_map<u32, std::string>;
-		using IndirectNameMap = std::unordered_map<u32, NameMap>;
-
-	protected:
-		friend class ModuleValidator;
 
 		std::string path;
-		Buffer data;
-		BufferIterator it;
-		std::unordered_map<std::string, BufferSlice> customSections;
-		std::vector<FunctionType> functionTypes;
-		std::vector<u32> functions;
-		std::vector<TableType> tableTypes;
-		std::vector<MemoryType> memoryTypes;
-		std::vector<Global> globals;
-		std::vector<Export> exports;
-		std::optional<u32> startFunction;
-		std::vector<Element> elements;
-		std::vector<FunctionCode> functionCodes;
-
-		std::vector<u32> importedFunctions;
-		std::vector<TableType> importedTableTypes;
-		std::vector<MemoryType> importedMemoryTypes;
-		std::vector<Global> importedGlobalTypes;
-
 		std::string mName;
-		NameMap functionNames;
-		IndirectNameMap functionLocalNames;
+		Buffer data;
+
+		std::vector<FunctionType> functionTypes;
+		std::vector<BytecodeFunction> functions;
+		std::vector<FunctionTable> functionTables;
+		std::vector<Memory> memories;
+		std::vector<Global<u32>> globals32;
+		std::vector<Global<u64>> globals64;
+
+		std::optional<UnlinkedImports> unlinkedImports;
+		ExportTable exports;
+
+		u32 numImportedFunctions;
+		u32 numImportedTables;
+		u32 numImportedMemories;
+		u32 numImportedGlobals;
 	};
 
-
-	class ModuleParser : public ParsingState {
+	class ModuleLinker {
 	public:
-		void parse(Buffer, std::string);
-		Module toModule();
+		void link();
 
 	private:
-		bool hasNext(u32 num = 1) const { return it.hasNext(num); }
-		u8 nextU8() { return it.nextU8(); }
-		void assertU8(u8 byte) { it.assertU8(byte); }
 
-		u32 nextU32() { return it.nextU32(); }
-		i32 nextI32() { return it.nextI32(); }
-
-		u32 nextBigEndianU32() { return it.nextBigEndianU32(); }
-		
-		BufferSlice nextSliceOf(u32 length) { return it.nextSliceOf(length); }
-		BufferSlice nextSliceTo(const BufferIterator& pos) { return it.nextSliceTo(pos); }
-		BufferSlice sliceFrom(const BufferIterator& pos) const { return it.sliceFrom(pos); }
-
-		std::string parseNameString();
-
-		void parseHeader();
-		void parseSection();
-		void parseCustomSection(u32);
-		void parseNameSection(BufferIterator);
-		void parseTypeSection();
-		void parseFunctionSection();
-		void parseTableSection();
-		void parseMemorySection();
-		void parseGlobalSection();
-		void parseExportSection();
-		void parseStartSection();
-		void parseElementSection();
-		void parseCodeSection();
-
-		NameMap parseNameMap();
-		IndirectNameMap parseIndirectNameMap();
-
-		FunctionType parseFunctionType();
-		std::vector<ValType> parseResultTypeVector();
-
-		TableType parseTableType();
-		MemoryType parseMemoryType();
-		Global parseGlobal();
-		Limits parseLimits();
-		Expression parseInitExpression();
-		Export parseExport();
-		Element parseElement();
-		FunctionCode parseFunctionCode();
-
-		std::vector<Expression> parseInitExpressionVector();
-		std::vector<u32> parseU32Vector();
-
-		void throwParsingError(const char*) const;
 	};
 
-	class ModuleValidator {
+	class ModuleCompiler {
 	public:
+		ModuleCompiler(const Interpreter& i, Module& m)
+			: interpreter{ i }, module{ m } {}
 
-		void validate(const ParsingState&);
+		void compile();
 
 	private:
 		using ValueRecord = std::optional<ValType>;
 		using LabelTypes = std::variant<BlockTypeParameters, BlockTypeResults>;
 
+		struct AddressPatchRequest {
+			sizeType locationToPatch;
+			bool isNearJump;
+		};
+
 		struct ControlFrame {
 			InstructionType opCode;
 			BlockTypeIndex blockTypeIndex;
 			u32 height;
+			u32 heightInBytes;
 			bool unreachable{ false };
+			u32 bytecodeOffset;
+			std::optional<sizeType> addressPatchList;
+			std::optional<AddressPatchRequest> elseLabelAddressPatch;
 
 			LabelTypes labelTypes() const;
+			void appendAddressPatchRequest(ModuleCompiler&, AddressPatchRequest);
+			void processAddressPatchRequests(ModuleCompiler&);
 		};
 
+		void compileFunction(BytecodeFunction&);
+		
+		void resetBytecodePrinter();
+		void print(Bytecode c);
+		void printU8(u8 x);
+		void printU32(u32 x);
+		void printU64(u64 x);
+		void printF32(f32 f);
+		void printF64(f64 f);
+		void printPointer(const void* p);
 
-		const ParsingState& s() const { assert(parsingState); return *parsingState; }
+		void printBytecodeExpectingNoArgumentsIfReachable(Instruction);
+		void printLocalGetSetTeeBytecodeIfReachable(BytecodeFunction::LocalOffset, Bytecode, Bytecode, Bytecode, Bytecode);
 
-		const FunctionType& functionTypeByIndex(u32);
-		const TableType& tableTypeByIndex(u32);
-		const MemoryType& memoryTypeByIndex(u32);
-		const Global& globalTypeByIndex(u32);
-
-		void validateFunction(u32);
-		void validateTableType(const TableType&);
-		void validateMemoryType(const MemoryType&);
-		void validateExport(const Export&);
-		void validateStartFunction(u32);
-		void validateGlobal(const Global&);
-		void validateElementSegment(const Element&);
-
-		void validateConstantExpression(const Expression&, ValType);
-
-		// Expression validation algorithm
-		void setFunctionContext(const FunctionType&, const FunctionCode&);
+		// Based on the expression validation algorithm
+		void setFunctionContext(const BytecodeFunction&);
 		void pushValue(ValType);
 		ValueRecord popValue();
 		ValueRecord popValue(ValueRecord);
@@ -328,29 +234,48 @@ namespace WASM {
 		void pushValues(const BlockTypeParameters&);
 		void pushValues(const BlockTypeResults&);
 		void pushValues(const LabelTypes&);
-		std::vector<ValueRecord>& popValues(const std::vector<ValueRecord>&);
-		std::vector<ValueRecord>& popValues(const std::vector<ValType>&);
-		std::vector<ValueRecord>& popValues(const BlockTypeParameters&);
-		std::vector<ValueRecord>& popValues(const BlockTypeResults&);
-		std::vector<ValueRecord>& popValues(const LabelTypes&);
-		void pushControlFrame(InstructionType, BlockTypeIndex);
+		void popValues(const std::vector<ValueRecord>&);
+		void popValues(const std::vector<ValType>&);
+		void popValues(const BlockTypeParameters&);
+		void popValues(const BlockTypeResults&);
+		void popValues(const LabelTypes&);
+		const std::vector<ValueRecord>& popValuesToList(const std::vector<ValType>&);
+		const std::vector<ValueRecord>& popValuesToList(const BlockTypeParameters&);
+		const std::vector<ValueRecord>& popValuesToList(const BlockTypeResults&);
+		const std::vector<ValueRecord>& popValuesToList(const LabelTypes& types);
+		ControlFrame& pushControlFrame(InstructionType, BlockTypeIndex);
 		ControlFrame popControlFrame();
 		void setUnreachable();
-		void validateOpcode(Instruction);
+		bool isReachable() const;
+		void compileNumericConstantInstruction(Instruction);
+		void compileNumericUnaryInstruction(Instruction);
+		void compileNumericBinaryInstruction(Instruction);
+		void compileInstruction(Instruction, u32);
 		void resetCachedReturnList(u32);
 
-		ValType localByIndex(u32) const;
+		BytecodeFunction::LocalOffset localByIndex(u32) const;
+		const FunctionType& blockTypeByIndex(u32);
+		u32 measureMaxPrintedBlockLength(u32, u32, bool= false) const;
+		void requestAddressPatch(u32, bool, bool= false);
+		void patchAddress(const AddressPatchRequest&);
 
-		void throwValidationError(const char*) const;
+		void printBytecode(std::ostream&);
 
-		const ParsingState* parsingState{ nullptr };
-		std::unordered_set<std::string> exportNames;
+		void throwCompilationError(const char*) const;
 
+		const Interpreter& interpreter;
+		Module& module;
+
+		Buffer printedBytecode;
+
+		u32 stackHeightInBytes;
 		std::vector<ValueRecord> valueStack;
 		std::vector<ControlFrame> controlStack;
 		std::vector<ValueRecord> cachedReturnList;
 
-		const FunctionType* currentFunctionType{ nullptr };
-		const std::vector<FunctionCode::CompressedLocalTypes>* currentLocals{ nullptr };
+		ArrayList<AddressPatchRequest> addressPatches;
+		
+		const BytecodeFunction* currentFunction{ nullptr };
 	};
+
 }

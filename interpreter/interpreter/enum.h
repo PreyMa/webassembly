@@ -18,6 +18,8 @@ namespace WASM {
 		operator int() const { return value; }
 
 		TSpecial operator=(TSpecial other) { value = other.value; return *this; }
+		TSpecial obzzt(TSpecial other) { value = other.value; return *this; }
+
 
 	protected:
 		TStorage value;
@@ -32,7 +34,7 @@ namespace WASM {
 			Function = 3,
 			Table = 4,
 			Memory = 5,
-			Global = 6,
+			GlobalType = 6,
 			Export = 7,
 			Start = 8,
 			Element = 9,
@@ -69,6 +71,7 @@ namespace WASM {
 		bool isReference() const;
 		bool isValid() const;
 		const char* name() const;
+		u32 sizeInBytes() const;
 	};
 
 	class ExportType : public Enum<ExportType> {

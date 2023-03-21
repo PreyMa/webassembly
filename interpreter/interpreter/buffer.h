@@ -7,11 +7,9 @@
 #include <cassert>
 
 #include "util.h"
+#include "forward.h"
 
 namespace WASM {
-	class Buffer;
-	class BufferSlice;
-
 	class BufferIterator {
 	public:
 		BufferIterator() = default;
@@ -71,13 +69,21 @@ namespace WASM {
 		Buffer& operator=(const Buffer&) = delete;
 		Buffer& operator=(Buffer&&) noexcept;
 
-		std::size_t size() const { return mData.size(); }
+		sizeType size() const { return mData.size(); }
 		bool isEmpty() const { return mData.size() == 0; }
 
-		u8& operator[](std::size_t idx) { return mData[idx]; }
-		const u8& operator[](std::size_t idx) const { return mData[idx]; }
+		void clear() { mData.clear(); }
 
-		BufferSlice slice(u32 from, u32 to);
+		void appendU8(u8);
+		void appendLittleEndianU32(u32);
+		void appendLittleEndianU64(u64);
+
+		void writeLittleEndianU32(sizeType, u32);
+
+		u8& operator[](sizeType idx) { return mData[idx]; }
+		const u8& operator[](sizeType idx) const { return mData[idx]; }
+
+		BufferSlice slice(sizeType from, sizeType to);
 		BufferIterator iterator();
 
 		const u8* begin() const { return mData.data(); }
@@ -90,15 +96,15 @@ namespace WASM {
 
 	class BufferSlice {
 	public:
-		BufferSlice(u8* b, u32 l) : mBegin{ b }, mLength{ l } {}
+		BufferSlice(u8* b, sizeType l) : mBegin{ b }, mLength{ l } {}
 
-		std::size_t size() const { return mLength; }
+		sizeType size() const { return mLength; }
 		bool isEmpty() const { return mLength == 0; }
 
-		u8& operator[](std::size_t idx) { assert(idx < mLength); return mBegin[idx]; }
-		const u8& operator[](std::size_t idx) const { assert(idx < mLength); return mBegin[idx]; }
+		u8& operator[](sizeType idx) { assert(idx < mLength); return mBegin[idx]; }
+		const u8& operator[](sizeType idx) const { assert(idx < mLength); return mBegin[idx]; }
 
-		BufferSlice slice(u32 from, u32 to);
+		BufferSlice slice(sizeType from, sizeType to);
 		BufferIterator iterator();
 
 		const u8* begin() const { return mBegin; }
@@ -113,7 +119,7 @@ namespace WASM {
 
 	private:
 		u8* mBegin;
-		u32 mLength;
+		sizeType mLength;
 	};
 }
 

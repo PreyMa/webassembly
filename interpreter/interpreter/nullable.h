@@ -17,6 +17,9 @@ namespace WASM {
 		T* operator->() { return ptr; }
 		const T* operator->() const { return ptr; }
 
+		T* pointer() { return ptr; }
+		const T* pointer() const { return ptr; }
+
 	private:
 		T* ptr{ nullptr };
 	};

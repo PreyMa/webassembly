@@ -7,9 +7,6 @@
 #include "buffer.h"
 
 namespace WASM {
-	class Instruction;
-	class ValType;
-
 	class InstructionType : public Enum <InstructionType> {
 	public:
 		enum TEnum {
@@ -242,9 +239,9 @@ namespace WASM {
 	};
 
 	using BlockTypeParameters = std::optional<u32>;
-	struct BlockTypeResults : public BlockTypeIndexBase {};
+	struct BlockTypeResults final : public BlockTypeIndexBase {};
 
-	struct BlockTypeIndex : public BlockTypeIndexBase {
+	struct BlockTypeIndex final : public BlockTypeIndexBase {
 		BlockTypeParameters parameters() const;
 		BlockTypeResults results() const;
 	};
@@ -275,6 +272,9 @@ namespace WASM {
 		Instruction(InstructionType t, const u8* p)
 			: type{ t }, vectorPointer{ p } {};
 
+		Instruction(InstructionType t, const u8* p, u32 c)
+			: type{ t }, operandC{ c }, vectorPointer{ p } {};
+
 		static Instruction fromWASMBytes(BufferIterator&);
 
 		void print(std::ostream&, const BufferSlice&) const;
@@ -289,6 +289,14 @@ namespace WASM {
 		u32 localIndex() const;
 		u32 functionIndex() const;
 
+		i32 asI32Constant() const;
+		u32 asIF32Constant() const;
+		u64 asIF64Constant() const;
+		std::optional<u32> asReferenceIndex() const;
+
+		std::optional<Bytecode> toBytecode() const;
+		u32 maxPrintedByteLength(const BufferSlice&) const;
+
 	private:
 		static Instruction parseBlockTypeInstruction(InstructionType, BufferIterator&);
 		static Instruction parseBranchTableInstruction(BufferIterator&);
@@ -299,6 +307,7 @@ namespace WASM {
 		void printSelectVectorInstruction(std::ostream&, const BufferSlice&) const;
 
 		InstructionType type;
+		u32 operandC;
 
 		union {
 			struct {

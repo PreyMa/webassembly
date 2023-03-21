@@ -2,11 +2,15 @@
 #include <cassert>
 #include <ostream>
 
-#include "instruction.h"
 #include "module.h"
+#include "bytecode.h"
 #include "error.h"
 
 using namespace WASM;
+
+static constexpr bool isPowerOfTwo(u64 x) {
+	return (x & (x - 1)) == 0;
+}
 
 InstructionType InstructionType::fromWASMBytes(BufferIterator& it)
 {
@@ -535,6 +539,9 @@ Instruction Instruction::fromWASMBytes(BufferIterator& it)
 	case IT::I64Store32: {
 		auto alignment = it.nextU32();
 		auto offset = it.nextU32();
+		if (!isPowerOfTwo(alignment)) {
+			throw std::runtime_error{ "Memory alignment has to be power of 2" };
+		}
 		return { type, alignment, offset }; 
 	}
 	case IT::MemorySize:
@@ -749,8 +756,9 @@ Instruction Instruction::parseBranchTableInstruction(BufferIterator& it)
 	for (u32 i = 0; i != numLabels; i++) {
 		it.nextU32();
 	}
+	auto defaultLabel = it.nextU32();
 
-	return { InstructionType::BranchTable, position };
+	return { InstructionType::BranchTable, position, defaultLabel };
 }
 
 Instruction Instruction::parseSelectVectorInstruction(BufferIterator& it)
@@ -767,7 +775,7 @@ void Instruction::printBranchTableInstruction(std::ostream& out, const BufferSli
 {
 	// FIXME: If buffer iterator was read only this ugly const cast could go away
 	assert(type == InstructionType::BranchTable);
-	out << type.name() << " [";
+	out << type.name() << " default: " << operandC << " [";
 	auto it = const_cast<BufferSlice&>(data).iterator();
 	it.moveTo(vectorPointer);
 	auto numLabels = it.nextU32();
@@ -1492,6 +1500,294 @@ u32 Instruction::localIndex() const {
 u32 Instruction::functionIndex() const {
 	assert(type == InstructionType::Call);
 	return operandA;
+}
+
+i32 Instruction::asI32Constant() const
+{
+	assert(type == InstructionType::I32Const);
+	return i32Constant;
+}
+
+u32 WASM::Instruction::asIF32Constant() const
+{
+	assert(type == InstructionType::I32Const || type == InstructionType::F32Const); 
+	return i32Constant;
+}
+
+u64 WASM::Instruction::asIF64Constant() const
+{
+	assert(type == InstructionType::I64Const || type == InstructionType::F64Const);
+	return i64Constant;
+}
+
+std::optional<u32> Instruction::asReferenceIndex() const
+{
+	assert(type == InstructionType::ReferenceFunction || type == InstructionType::ReferenceNull);
+	if (type == InstructionType::ReferenceFunction) {
+		return operandA;
+	}
+
+	return {};
+}
+
+std::optional<Bytecode> Instruction::toBytecode() const
+{
+	using IT = InstructionType;
+	using BA = Bytecode;
+	switch (type) {
+		case IT::Unreachable: return BA::Unreachable;
+		case IT::NoOperation:
+		case IT::Block:
+		case IT::Loop:
+		case IT::If:
+		case IT::Else:
+		case IT::End:
+		case IT::Branch:
+		case IT::BranchIf:
+		case IT::BranchTable:
+			return {};
+		case IT::Return: return {};
+		case IT::Call: return BA::Call;
+		case IT::CallIndirect: return BA::CallIndirect;
+		case IT::Drop:
+		case IT::Select:
+		case IT::SelectFrom:
+		case IT::LocalGet:
+		case IT::LocalSet:
+		case IT::LocalTee:
+			return {};
+		case IT::GlobalGet:
+		case IT::GlobalSet:
+		case IT::ReferenceNull:
+		case IT::ReferenceIsNull:
+		case IT::ReferenceFunction:
+			return {};
+		case IT::TableGet: return BA::TableGet;
+		case IT::TableSet: return BA::TableSet;
+		case IT::TableInit: return BA::TableInit;
+		case IT::ElementDrop: return BA::ElementDrop;
+		case IT::TableCopy: return BA::TableCopy;
+		case IT::TableGrow: return BA::TableGrow;
+		case IT::TableSize: return BA::TableSize;
+		case IT::TableFill: return BA::TableFill;
+		case IT::I32Load: return BA::I32Load;
+		case IT::I64Load: return BA::I64Load;
+		case IT::F32Load: return BA::F32Load;
+		case IT::F64Load: return BA::F64Load;
+		case IT::I32Load8s: return BA::I32Load8s;
+		case IT::I32Load8u: return BA::I32Load8u;
+		case IT::I32Load16s: return BA::I32Load16s;
+		case IT::I32Load16u: return BA::I32Load16u;
+		case IT::I64Load8s: return BA::I64Load8s;
+		case IT::I64Load8u: return BA::I64Load8u;
+		case IT::I64Load16s: return BA::I64Load16s;
+		case IT::I64Load16u: return BA::I64Load16u;
+		case IT::I64Load32s: return BA::I64Load32s;
+		case IT::I64Load32u: return BA::I64Load32u;
+		case IT::I32Store: return BA::I32Store;
+		case IT::I64Store: return BA::I64Store;
+		case IT::F32Store: return BA::F32Store;
+		case IT::F64Store: return BA::F64Store;
+		case IT::I32Store8: return BA::I32Store8;
+		case IT::I32Store16: return BA::I32Store16;
+		case IT::I64Store8: return BA::I64Store8;
+		case IT::I64Store16: return BA::I64Store16;
+		case IT::I64Store32: return BA::I64Store32;
+		case IT::MemorySize: return BA::MemorySize;
+		case IT::MemoryGrow: return BA::MemoryGrow;
+		case IT::MemoryInit: return BA::MemoryInit;
+		case IT::DataDrop: return BA::DataDrop;
+		case IT::MemoryCopy: return BA::MemoryCopy;
+		case IT::MemoryFill: return BA::MemoryFill;
+		case IT::I32Const: return BA::I32Const;
+		case IT::I64Const: return BA::I64Const;
+		case IT::F32Const: return BA::F32Const;
+		case IT::F64Const: return BA::F64Const;
+		case IT::I32EqualZero: return BA::I32EqualZero;
+		case IT::I32Equal: return BA::I32Equal;
+		case IT::I32NotEqual: return BA::I32NotEqual;
+		case IT::I32LesserS: return BA::I32LesserS;
+		case IT::I32LesserU: return BA::I32LesserU;
+		case IT::I32GreaterS: return BA::I32GreaterS;
+		case IT::I32GreaterU: return BA::I32GreaterU;
+		case IT::I32LesserEqualS: return BA::I32LesserEqualS;
+		case IT::I32LesserEqualU: return BA::I32LesserEqualU;
+		case IT::I32GreaterEqualS: return BA::I32GreaterEqualS;
+		case IT::I32GreaterEqualU: return BA::I32GreaterEqualU;
+		case IT::I64EqualZero: return BA::I64EqualZero;
+		case IT::I64Equal: return BA::I64Equal;
+		case IT::I64NotEqual: return BA::I64NotEqual;
+		case IT::I64LesserS: return BA::I64LesserS;
+		case IT::I64LesserU: return BA::I64LesserU;
+		case IT::I64GreaterS: return BA::I64GreaterS;
+		case IT::I64GreaterU: return BA::I64GreaterU;
+		case IT::I64LesserEqualS: return BA::I64LesserEqualS;
+		case IT::I64LesserEqualU: return BA::I64LesserEqualU;
+		case IT::I64GreaterEqualS: return BA::I64GreaterEqualS;
+		case IT::I64GreaterEqualU: return BA::I64GreaterEqualU;
+		case IT::F32Equal: return BA::F32Equal;
+		case IT::F32NotEqual: return BA::F32NotEqual;
+		case IT::F32Lesser: return BA::F32Lesser;
+		case IT::F32Greater: return BA::F32Greater;
+		case IT::F32LesserEqual: return BA::F32LesserEqual;
+		case IT::F32GreaterEqual: return BA::F32GreaterEqual;
+		case IT::F64Equal: return BA::F64Equal;
+		case IT::F64NotEqual: return BA::F64NotEqual;
+		case IT::F64Lesser: return BA::F64Lesser;
+		case IT::F64Greater: return BA::F64Greater;
+		case IT::F64LesserEqual: return BA::F64LesserEqual;
+		case IT::F64GreaterEqual: return BA::F64GreaterEqual;
+		case IT::I32CountLeadingZeros: return BA::I32CountLeadingZeros;
+		case IT::I32CountTrailingZeros: return BA::I32CountTrailingZeros;
+		case IT::I32CountOnes: return BA::I32CountOnes;
+		case IT::I32Add: return BA::I32Add;
+		case IT::I32Subtract: return BA::I32Subtract;
+		case IT::I32Multiply: return BA::I32Multiply;
+		case IT::I32DivideS: return BA::I32DivideS;
+		case IT::I32DivideU: return BA::I32DivideU;
+		case IT::I32RemainderS: return BA::I32RemainderS;
+		case IT::I32RemainderU: return BA::I32RemainderU;
+		case IT::I32And: return BA::I32And;
+		case IT::I32Or: return BA::I32Or;
+		case IT::I32Xor: return BA::I32Xor;
+		case IT::I32ShiftLeft: return BA::I32ShiftLeft;
+		case IT::I32ShiftRightS: return BA::I32ShiftRightS;
+		case IT::I32ShiftRightU: return BA::I32ShiftRightU;
+		case IT::I32RotateLeft: return BA::I32RotateLeft;
+		case IT::I32RotateRight: return BA::I32RotateRight;
+		case IT::I64CountLeadingZeros: return BA::I64CountLeadingZeros;
+		case IT::I64CountTrailingZeros: return BA::I64CountTrailingZeros;
+		case IT::I64CountOnes: return BA::I64CountOnes;
+		case IT::I64Add: return BA::I64Add;
+		case IT::I64Subtract: return BA::I64Subtract;
+		case IT::I64Multiply: return BA::I64Multiply;
+		case IT::I64DivideS: return BA::I64DivideS;
+		case IT::I64DivideU: return BA::I64DivideU;
+		case IT::I64RemainderS: return BA::I64RemainderS;
+		case IT::I64RemainderU: return BA::I64RemainderU;
+		case IT::I64And: return BA::I64And;
+		case IT::I64Or: return BA::I64Or;
+		case IT::I64Xor: return BA::I64Xor;
+		case IT::I64ShiftLeft: return BA::I64ShiftLeft;
+		case IT::I64ShiftRightS: return BA::I64ShiftRightS;
+		case IT::I64ShiftRightU: return BA::I64ShiftRightU;
+		case IT::I64RotateLeft: return BA::I64RotateLeft;
+		case IT::I64RotateRight: return BA::I64RotateRight;
+		case IT::F32Absolute: return BA::F32Absolute;
+		case IT::F32Negate: return BA::F32Negate;
+		case IT::F32Ceil: return BA::F32Ceil;
+		case IT::F32Floor: return BA::F32Floor;
+		case IT::F32Truncate: return BA::F32Truncate;
+		case IT::F32Nearest: return BA::F32Nearest;
+		case IT::F32SquareRoot: return BA::F32SquareRoot;
+		case IT::F32Add: return BA::F32Add;
+		case IT::F32Subtract: return BA::F32Subtract;
+		case IT::F32Multiply: return BA::F32Multiply;
+		case IT::F32Divide: return BA::F32Divide;
+		case IT::F32Minimum: return BA::F32Minimum;
+		case IT::F32Maximum: return BA::F32Maximum;
+		case IT::F32CopySign: return BA::F32CopySign;
+		case IT::F64Absolute: return BA::F64Absolute;
+		case IT::F64Negate: return BA::F64Negate;
+		case IT::F64Ceil: return BA::F64Ceil;
+		case IT::F64Floor: return BA::F64Floor;
+		case IT::F64Truncate: return BA::F64Truncate;
+		case IT::F64Nearest: return BA::F64Nearest;
+		case IT::F64SquareRoot: return BA::F64SquareRoot;
+		case IT::F64Add: return BA::F64Add;
+		case IT::F64Subtract: return BA::F64Subtract;
+		case IT::F64Multiply: return BA::F64Multiply;
+		case IT::F64Divide: return BA::F64Divide;
+		case IT::F64Minimum: return BA::F64Minimum;
+		case IT::F64Maximum: return BA::F64Maximum;
+		case IT::F64CopySign: return BA::F64CopySign;
+		case IT::I32WrapI64: return BA::I32WrapI64;
+		case IT::I32TruncateF32S: return BA::I32TruncateF32S;
+		case IT::I32TruncateF32U: return BA::I32TruncateF32U;
+		case IT::I32TruncateF64S: return BA::I32TruncateF64S;
+		case IT::I32TruncateF64U: return BA::I32TruncateF64U;
+		case IT::I64ExtendI32S: return BA::I64ExtendI32S;
+		case IT::I64ExtendI32U: return BA::I64ExtendI32U;
+		case IT::I64TruncateF32S: return BA::I64TruncateF32S;
+		case IT::I64TruncateF32U: return BA::I64TruncateF32U;
+		case IT::I64TruncateF64S: return BA::I64TruncateF64S;
+		case IT::I64TruncateF64U: return BA::I64TruncateF64U;
+		case IT::F32ConvertI32S: return BA::F32ConvertI32S;
+		case IT::F32ConvertI32U: return BA::F32ConvertI32U;
+		case IT::F32ConvertI64S: return BA::F32ConvertI64S;
+		case IT::F32ConvertI64U: return BA::F32ConvertI64U;
+		case IT::F32DemoteF64: return BA::F32DemoteF64;
+		case IT::F64ConvertI32S: return BA::F64ConvertI32S;
+		case IT::F64ConvertI32U: return BA::F64ConvertI32U;
+		case IT::F64ConvertI64S: return BA::F64ConvertI64S;
+		case IT::F64ConvertI64U: return BA::F64ConvertI64U;
+		case IT::F64PromoteF32: return BA::F64PromoteF32;
+		case IT::I32ReinterpretF32: return BA::I32ReinterpretF32;
+		case IT::I64ReinterpretF64: return BA::I64ReinterpretF64;
+		case IT::F32ReinterpretI32: return BA::F32ReinterpretI32;
+		case IT::F64ReinterpretI64: return BA::F64ReinterpretI64;
+		case IT::I32Extend8s: return BA::I32Extend8s;
+		case IT::I32Extend16s: return BA::I32Extend16s;
+		case IT::I64Extend8s: return BA::I64Extend8s;
+		case IT::I64Extend16s: return BA::I64Extend16s;
+		case IT::I64Extend32s: return BA::I64Extend32s;
+		case IT::I32TruncateSaturateF32S: return BA::I32TruncateSaturateF32S;
+		case IT::I32TruncateSaturateF32U: return BA::I32TruncateSaturateF32U;
+		case IT::I32TruncateSaturateF64S: return BA::I32TruncateSaturateF64S;
+		case IT::I32TruncateSaturateF64U: return BA::I32TruncateSaturateF64U;
+		case IT::I64TruncateSaturateF32S: return BA::I64TruncateSaturateF32S;
+		case IT::I64TruncateSaturateF32U: return BA::I64TruncateSaturateF32U;
+		case IT::I64TruncateSaturateF64S: return BA::I64TruncateSaturateF64S;
+		case IT::I64TruncateSaturateF64U: return BA::I64TruncateSaturateF64U;
+	}
+}
+
+u32 WASM::Instruction::maxPrintedByteLength(const BufferSlice& data) const
+{
+	auto bytecode = toBytecode();
+	if (bytecode.has_value()) {
+		return 1+ bytecode->arguments().sizeInBytes();
+	}
+
+	using IT = InstructionType;
+	switch (type) {
+	case IT::NoOperation:
+	case IT::Block:
+	case IT::Loop:
+		return 0;
+	case IT::If:
+	case IT::Else:
+		return 5; // Far jump
+	case IT::End:
+		return 0;
+	case IT::Branch:
+	case IT::BranchIf:
+		return 5; // Far jump
+	case IT::BranchTable: {
+		auto it = const_cast<BufferSlice&>(data).iterator();
+		it.moveTo(vectorPointer);
+		auto numLabels = it.nextU32();
+		return 9 + numLabels * 4;
+	}
+	case IT::Return: return 5;
+	case IT::Drop:
+	case IT::Select:
+	case IT::SelectFrom:
+		return 1;
+	case IT::LocalGet:
+	case IT::LocalSet:
+	case IT::LocalTee:
+		return 5;
+	case IT::GlobalGet:
+	case IT::GlobalSet:
+		return 9;
+	case IT::ReferenceNull:
+	case IT::ReferenceFunction:
+		return 9;
+	case IT::ReferenceIsNull:
+		return 1;
+	default: assert(false);
+	}
 }
 
 std::optional<ValType> InstructionType::constantType() const

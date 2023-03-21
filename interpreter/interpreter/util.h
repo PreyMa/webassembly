@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace WASM {
@@ -15,4 +16,6 @@ namespace WASM {
 
 	using f32 = float;
 	using f64 = double;
+
+	using sizeType = std::size_t;
 }

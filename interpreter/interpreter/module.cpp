@@ -1,1048 +1,369 @@
+
 #include <cassert>
+#include <iomanip>
 #include <iostream>
 
-#include "module.h"
-#include "instruction.h"
+#include "interpreter.h"
 #include "error.h"
 
 using namespace WASM;
 
-void ModuleParser::parse(Buffer buffer, std::string modulePath)
-{
-	path = std::move(modulePath);
-	data = std::move(buffer);
-	it = data.iterator();
-
-	parseHeader();
-
-	while (hasNext()) {
-		parseSection();
-	}
-
-	for (auto& f : functionCodes) {
-		std::cout << "=> Function:";
-		f.printBody(std::cout);
-		std::cout << std::endl;
-	}
+static constexpr inline bool isShortDistance(i32 distance) {
+	return distance >= -128 && distance <= 127;
 }
 
-Module ModuleParser::toModule()
-{
-	return Module{ std::move(data), std::move(path) };
+BytecodeFunction::BytecodeFunction(u32 idx, u32 ti, FunctionType& t, FunctionCode&& c)
+	: mIndex{ idx }, mTypeIndex{ ti }, type{ t }, code{ std::move(c.code) } {
+	uncompressLocalTypes(c.compressedLocalTypes);
 }
 
-std::string ModuleParser::parseNameString()
+std::optional<BytecodeFunction::LocalOffset> BytecodeFunction::localByIndex(u32 idx) const
 {
-	auto nameLength = nextU32();
-	auto nameSlice = nextSliceOf(nameLength);
-	return nameSlice.toString();
-}
-
-void ModuleParser::parseHeader()
-{
-	if (!hasNext()) {
-		throwParsingError("Expected module header is too short");
-	}
-
-	auto magicNumber = nextBigEndianU32();
-	auto versionNumber = nextBigEndianU32();
-
-	if (magicNumber != 0x0061736d) {
-		throwParsingError("Invalid module header magic number");
-	}
-
-	if (versionNumber != 0x01000000) {
-		throwParsingError("Invalid module header version number");
-	}
-}
-
-void ModuleParser::parseSection()
-{
-	if (!hasNext()) {
-		throwParsingError("Expected section type byte");
-	}
-
-	auto type = SectionType::fromInt(nextU8());
-	auto length = nextU32();
-
-	auto oldPos = it;
-	switch (type) {
-	case SectionType::Custom: parseCustomSection(length); break;
-	case SectionType::Type: parseTypeSection(); break;
-	case SectionType::Function: parseFunctionSection(); break;
-	case SectionType::Table: parseTableSection(); break;
-	case SectionType::Memory: parseMemorySection(); break;
-	case SectionType::Global: parseGlobalSection(); break;
-	case SectionType::Export: parseExportSection(); break;
-	case SectionType::Start: parseStartSection(); break;
-	case SectionType::Element: parseElementSection(); break;
-	case SectionType::Code: parseCodeSection(); break;
-	default:
-		std::cout << "Section type not recognized '" << type.name() << "'. skipping " << length << " bytes" << std::endl;
-		it += length;
-	}
-
-	assert(it == oldPos + length);
-}
-
-void ModuleParser::parseCustomSection(u32 length)
-{
-	if (!hasNext(length)) {
-		throwParsingError("Custom section is longer than available data");
-	}
-
-	auto endPos = it+ length;
-	auto name = parseNameString();
-	if (name == "name") {
-		parseNameSection(endPos);
-		return;
-	}
-
-	auto dataSlice = nextSliceTo( endPos );
-
-	std::cout << "-> Parsed custom section '" << name << "' containing " << dataSlice.size() << " bytes" << std::endl;
-	customSections.insert( std::make_pair(std::move(name), dataSlice) );
-}
-
-void ModuleParser::parseNameSection(BufferIterator endPos)
-{
-	std::cout << "-> Parsed custom section 'name'" << std::endl;
-
-	std::optional<NameSubsectionType> prevSectionType;
-
-	while (it < endPos) {
-		auto type = NameSubsectionType::fromInt(nextU8());
-		auto length = nextU32();
-		
-		if (prevSectionType.has_value() && type <= *prevSectionType) {
-			throwParsingError("Expected name subsection indices in increasing order");
-		}
-
-		auto oldPos = it;
-		switch (type) {
-		case NameSubsectionType::ModuleName: {
-			mName = parseNameString();
-			std::cout << "  - Module name: " << mName << std::endl;
-			break;
-		}
-		case NameSubsectionType::FunctionNames: {
-			functionNames = parseNameMap();
-			std::cout << "  - Function names: " << std::endl;
-			for (auto& n : functionNames) {
-				std::cout << "    - " << n.first << " -> " << n.second << std::endl;
-			}
-			break;
-		}
-		case NameSubsectionType::LocalNames: {
-			functionLocalNames = parseIndirectNameMap();
-			std::cout << "  - Local names: " << std::endl;
-			for (auto& g : functionLocalNames) {
-				std::cout << "    - Group: " << g.first << std::endl;
-				for (auto& n : g.second) {
-					std::cout << "      - " << n.first << " -> " << n.second << std::endl;
-				}
-			}
-			break;
-		}
-		default:
-			std::cout << "  Name subsection type not recognized '" << type.name() << "'. skipping " << length << " bytes" << std::endl;
-			it += length;
-		}
-
-		prevSectionType = type;
-		assert(it == oldPos + length);
-	}
-}
-
-void ModuleParser::parseTypeSection()
-{
-	auto numFunctionTypes = nextU32();
-
-	std::cout << "-> Parsed type section containing " << numFunctionTypes << " function types" << std::endl;
-
-	functionTypes.reserve(functionTypes.size()+ numFunctionTypes);
-	for (u32 i = 0; i != numFunctionTypes; i++) {
-		auto functionType = parseFunctionType();
-
-		std::cout << "  - " << i << " ";
-		functionType.print(std::cout);
-		std::cout << std::endl;
-
-		functionTypes.emplace_back( std::move(functionType) );
-	}
-}
-
-void ModuleParser::parseFunctionSection()
-{
-	auto numFunctions = nextU32();
-
-	std::cout << "-> Parsed function section containing " << numFunctions << " functions" << std::endl;
-
-	functions.reserve(functions.size() + numFunctions);
-	for (u32 i = 0; i != numFunctions; i++) {
-		auto typeIdx = nextU32();
-		functions.push_back( typeIdx );
-		std::cout << "  - " << typeIdx << std::endl;
-	}
-}
-
-void ModuleParser::parseTableSection()
-{
-	auto numTables = nextU32();
-
-	std::cout << "-> Parsed table section containing " << numTables << " tables" << std::endl;
-
-	tableTypes.reserve(tableTypes.size() + numTables);
-	for (u32 i = 0; i != numTables; i++) {
-		auto tableType = parseTableType();
-
-		std::cout << "  - ";
-		tableType.print(std::cout);
-		std::cout << std::endl;
-
-		tableTypes.emplace_back( std::move(tableType) );
-	}
-}
-
-void ModuleParser::parseMemorySection()
-{
-	auto numMemories = nextU32();
-
-	std::cout << "-> Parsed memory section containing " << numMemories << " memories" << std::endl;
-
-	memoryTypes.reserve(memoryTypes.size() + numMemories);
-	for (u32 i = 0; i != numMemories; i++) {
-		auto memoryType = parseMemoryType();
-
-		std::cout << "  - ";
-		memoryType.print(std::cout);
-		std::cout << std::endl;
-
-		memoryTypes.emplace_back(std::move(memoryType));
-	}
-}
-
-void ModuleParser::parseGlobalSection()
-{
-	auto numGlobals = nextU32();
-	
-	std::cout << "-> Parsed global section containing " << numGlobals << " globals" << std::endl;
-
-	globals.reserve(globals.size() + numGlobals);
-	for (u32 i = 0; i != numGlobals; i++) {
-		auto global = parseGlobal();
-
-		std::cout << "  - ";
-		global.print(std::cout);
-		std::cout << std::endl;
-
-		globals.emplace_back(std::move(global));
-	}
-}
-
-void ModuleParser::parseExportSection()
-{
-	auto numExports = nextU32();
-
-	std::cout << "-> Parsed export section containing " << numExports << " exports" << std::endl;
-
-	exports.reserve(exports.size() + numExports);
-	for (u32 i = 0; i != numExports; i++) {
-		auto exp = parseExport();
-
-		std::cout << "  - ";
-		exp.print(std::cout);
-		std::cout << std::endl;
-
-		exports.emplace_back(std::move(exp));
-	}
-}
-
-void ModuleParser::parseStartSection()
-{
-	auto startFunctionIndex = nextU32();
-	startFunction.emplace(startFunctionIndex);
-
-	std::cout << "-> Parsed start section containing start function index " << startFunctionIndex << std::endl;
-}
-
-void ModuleParser::parseElementSection()
-{
-	auto numElements = nextU32();
-
-	std::cout << "-> Parsed element section containing " << numElements << " elements" << std::endl;
-
-	elements.reserve(elements.size() + numElements);
-	for (u32 i = 0; i != numElements; i++) {
-		auto element = parseElement();
-
-		std::cout << "  - ";
-		element.print(std::cout);
-		std::cout << std::endl;
-
-		elements.emplace_back(std::move(element));
-	}
-}
-
-void ModuleParser::parseCodeSection()
-{
-	auto numFunctionCodes = nextU32();
-
-	std::cout << "-> Parsed code section containing " << numFunctionCodes << " function code items" << std::endl;
-
-	functionCodes.reserve(functionCodes.size() + numFunctionCodes);
-	for (u32 i = 0; i != numFunctionCodes; i++) {
-		auto code= parseFunctionCode();
-
-		std::cout << "  - ";
-		code.print(std::cout);
-		std::cout << std::endl;
-
-		functionCodes.emplace_back(std::move(code));
-	}
-}
-
-ModuleParser::NameMap ModuleParser::parseNameMap()
-{
-	NameMap nameMap;
-
-	auto numNameAssoc = nextU32();
-	nameMap.reserve(numNameAssoc);
-
-	u32 prevNameIdx = 0;
-
-	for (u32 i = 0; i != numNameAssoc; i++) {
-		auto nameIdx = nextU32();
-		auto name = parseNameString();
-
-		if (i!= 0 && nameIdx <= prevNameIdx) {
-			throwParsingError("Expected name indices in increasing order for name map.");
-		}
-
-		nameMap.emplace( nameIdx, std::move(name) );
-		prevNameIdx = nameIdx;
-	}
-
-	return nameMap;
-}
-
-ModuleParser::IndirectNameMap ModuleParser::parseIndirectNameMap()
-{
-	IndirectNameMap indirectMap;
-
-	auto numGroups = nextU32();
-	indirectMap.reserve(numGroups);
-
-	u32 prevGroupIdx = 0;
-
-	for (u32 i = 0; i != numGroups; i++) {
-		auto groupIdx = nextU32();
-		auto nameMap = parseNameMap();
-
-		if (i!= 0 && groupIdx <= prevGroupIdx) {
-			throwParsingError("Expected group indices in increasing order for indirect name map.");
-		}
-
-		indirectMap.emplace(groupIdx, std::move(nameMap));
-		prevGroupIdx= groupIdx;
-	}
-
-	return indirectMap;
-}
-
-FunctionType ModuleParser::parseFunctionType()
-{
-	assertU8(0x60);
-	auto parameters = parseResultTypeVector();
-	auto results = parseResultTypeVector();
-	
-	return { std::move(parameters), std::move(results) };
-}
-
-std::vector<ValType> ModuleParser::parseResultTypeVector()
-{
-	auto resultNum = nextU32();
-	std::vector<ValType> results;
-	results.reserve(resultNum);
-	for (u32 i = 0; i != resultNum; i++) {
-		auto valType = ValType::fromInt(nextU8());
-		if (!valType.isValid()) {
-			throwParsingError("Found invalid val type while parsing result type vector");
-		}
-		results.push_back( valType );
-	}
-
-	return results;
-}
-
-TableType ModuleParser::parseTableType()
-{
-	if (!hasNext(3)) {
-		throwParsingError("Not enough bytes to parse table type");
-	}
-
-	auto elementRefType = ValType::fromInt(nextU8());
-	if (!elementRefType.isReference()) {
-		throwParsingError("Expected reference val type for table element type");
-	}
-
-	auto limits = parseLimits();
-	return { elementRefType, limits };
-}
-
-MemoryType ModuleParser::parseMemoryType()
-{
-	if (!hasNext()) {
-		throwParsingError("Not enough bytes to parse memory type");
-	}
-	
-	return { parseLimits()};
-}
-
-Global ModuleParser::parseGlobal()
-{
-	if (!hasNext(3)) {
-		throwParsingError("Not enough bytes to parse global");
-	}
-
-	auto valType = ValType::fromInt(nextU8());
-	if (!valType.isValid()) {
-		throwParsingError("Invalid valtype for global");
-	}
-
-	bool isMutable = false;
-	auto isMutableFlag = nextU8();
-	if (isMutableFlag <= 0x01) {
-		isMutable = static_cast<bool>(isMutableFlag);
-	}
-	else {
-		throwParsingError("Invalid mutability flag for global. Expected 0x00 or 0x01");
-	}
-
-	auto initExpressionCode = parseInitExpression();
-
-	return { valType, isMutable, initExpressionCode };
-}
-
-Limits ModuleParser::parseLimits()
-{
-	auto hasMaximum = nextU8();
-	if (hasMaximum == 0x00) {
-		auto min = nextU32();
-		return { min };
-	}
-	else if (hasMaximum == 0x01) {
-		auto min = nextU32();
-		auto max = nextU32();
-		return { min, max };
-	}
-	else {
-		throwParsingError("Invalid limits format. Expected 0x00 or 0x01");
-	}
-}
-
-Expression ModuleParser::parseInitExpression()
-{
-	std::vector<Instruction> instructions;
-	auto beginPos = it;
-	while (hasNext()) {
-		auto& ins = instructions.emplace_back(Instruction::fromWASMBytes(it));
-		if (ins == InstructionType::End) {
-			return { sliceFrom(beginPos), std::move(instructions) };
-		}
-	}
-
-	throwParsingError("Unexpected end of module while parsing init expression");
-}
-
-std::vector<Expression> ModuleParser::parseInitExpressionVector()
-{
-	auto numExp = nextU32();
-	std::vector<Expression> exps;
-	exps.reserve(numExp);
-
-	for (u32 i = 0; i != numExp; i++) {
-		exps.emplace_back(parseInitExpression());
-	}
-
-	return exps;
-}
-
-std::vector<u32> ModuleParser::parseU32Vector()
-{
-	auto numExp = nextU32();
-	std::vector<u32> ints;
-	ints.reserve(numExp);
-
-	for (u32 i = 0; i != numExp; i++) {
-		ints.emplace_back(nextU32());
-	}
-
-	return ints;
-}
-
-void ModuleParser::throwParsingError(const char* msg) const
-{
-	throw ParsingError{ static_cast<u64>(it.positionPointer() - data.begin()), path, std::string{msg} };
-}
-
-Export ModuleParser::parseExport()
-{
-	if (!hasNext(3)) {
-		throwParsingError("Not enough bytes to parse export");
-	}
-	
-	auto name = parseNameString();
-	auto exportType = ExportType::fromInt(nextU8());
-	auto index = nextU32();
-
-	return { std::move(name), exportType, index };
-}
-
-Element ModuleParser::parseElement()
-{
-	const auto parseElementKind = [this]() {
-		if (nextU8() != 0x00) {
-			throwParsingError("Only element kind 'function reference' is supported");
-		}
-	};
-
-	const auto parseReferenceType = [this]() {
-		auto refType = ValType::fromInt(nextU8());
-		if (!refType.isReference()) {
-			throwParsingError("Expected reference type for element");
-		}
-		return refType;
-	};
-
-	// Bit 0 -> is declarative or passive
-	// Bit 1 -> has explicit table index  |  is declarative
-	// Bit 2 -> has element type and element expression
-
-	// 0 000          expr          vec(funcidx)   -> active
-	// 1 001               elemkind vec(funcidx)   -> passive
-	// 2 010 tableidx expr elemkind vec(funcidx)   -> active
-	// 3 011               elemkind vec(funcidx)   -> declarative
-	// 4 100          expr          vec(expr)      -> active
-	// 5 101               reftype  vec(expr)      -> passive
-	// 6 110 tableidx expr reftype  vec(expr)      -> active
-	// 7 111               reftype  vec(expr)      -> declarative
-
-	auto bitField = nextU32();
-	switch (bitField) {
-	case 0:
-	{
-		auto tableOffset = parseInitExpression();
-		auto functions = parseU32Vector();
-		return {ElementMode::Active, ValType::FuncRef, 0, tableOffset, std::move(functions)};
-	}
-	case 1:
-	{
-		parseElementKind();
-		auto functions = parseU32Vector();
-		return {ElementMode::Passive, ValType::FuncRef, std::move(functions)};
-	}
-	case 2:
-	{
-		auto tableIdx = nextU32();
-		auto tableOffset = parseInitExpression();
-		parseElementKind();
-		auto functions = parseU32Vector();
-		return {ElementMode::Active, ValType::FuncRef, tableIdx, tableOffset, std::move(functions)};
-	}
-	case 3:
-	{
-		parseElementKind();
-		auto functions = parseU32Vector();
-		return {ElementMode::Declarative, ValType::FuncRef, std::move(functions)};
-	}
-	case 4:
-	{
-		auto tableOffset = parseInitExpression();
-		auto exprs = parseInitExpressionVector();
-		return {ElementMode::Active, ValType::FuncRef, 0, tableOffset, std::move(exprs)};
-	}
-	case 5:
-	{
-		auto refType = parseReferenceType();
-		auto exprs = parseInitExpressionVector();
-		return {ElementMode::Passive, refType, std::move(exprs)};
-	}
-	case 6:
-	{
-		auto tableIdx = nextU32();
-		auto tableOffset = parseInitExpression();
-		auto refType = parseReferenceType();
-		auto exprs = parseInitExpressionVector();
-		return {ElementMode::Active, refType, tableIdx, tableOffset, std::move(exprs)};
-	}
-	case 7:
-	{
-		auto refType = parseReferenceType();
-		auto exprs = parseInitExpressionVector();
-		return {ElementMode::Declarative, refType, std::move(exprs)};
-	}
-	default:
-		throwParsingError("Invalid element bit field");
-	}
-}
-
-FunctionCode ModuleParser::parseFunctionCode()
-{
-	auto byteCount = nextU32();
-	auto posBeforeLocals = it;
-	auto numLocals = nextU32();
-	
-	std::vector<FunctionCode::CompressedLocalTypes> locals;
-	for (u32 i = 0; i != numLocals; i++) {
-		auto localCount = nextU32();
-		auto localType = ValType::fromInt(nextU8());
-		locals.emplace_back(localCount, localType);
-	}
-
-	auto codeSlice = nextSliceTo(posBeforeLocals + byteCount);
-	if (codeSlice.isEmpty()) {
-		throwParsingError("Invalid funcion code item. Empty expression");
-	}
-		
-	if (codeSlice.last() != 0x0B) {
-		throwParsingError("Invalid funcion code item. Expected 0x0B at end of expression");
-	}
-
-	std::vector<Instruction> instructions;
-	auto codeIt = codeSlice.iterator();
-	while (codeIt.hasNext()) {
-		instructions.emplace_back(Instruction::fromWASMBytes(codeIt));
-	}
-
-	return { Expression{codeSlice, instructions}, std::move(locals) };
-}
-
-bool FunctionType::takesVoidReturnsVoid() const
-{
-	return mParameters.empty() && mResults.empty();
-}
-
-void FunctionType::print(std::ostream& out) const
-{
-	out << "Function: ";
-
-	for (auto& param : mParameters) {
-		out << param.name() << ' ';
-	}
-
-	if (mParameters.empty()) {
-		out << "<none> ";
-	}
-
-	out << "-> ";
-
-	for (auto& result : mResults) {
-		out << result.name() << ' ';
-	}
-
-	if (mResults.empty()) {
-		out << "<none>";
-	}
-}
-
-void Limits::print(std::ostream& out) const
-{
-	out << '(' << min;
-	if (max.has_value()) {
-		out << ", " << *max;
-	}
-	out << ')';
-}
-
-bool Limits::isValid(u32 range) const
-{
-	if (min > range) {
-		return false;
-	}
-
-	if (max.has_value()) {
-		return *max <= range && min <= *max;
-	}
-
-	return true;
-}
-
-void TableType::print(std::ostream& out) const
-{
-	out << "Table: " << mElementReferenceType.name() << ' ';
-	mLimits.print(out);
-}
-
-void Global::print(std::ostream& out) const
-{
-	out << "Global: " << (mIsMutable ? "mutable " : "const ") << mType.name() << " ";
-	mInitExpression.printBytes(out);
-}
-
-bool Export::isValid(u32 numFunctions, u32 numTables, u32 numMemories, u32 numGlobals) const
-{
-	switch (mExportType) {
-	case ExportType::FunctionIndex: return mIndex < numFunctions;
-	case ExportType::TableIndex: return mIndex < numTables;
-	case ExportType::MemoryIndex: return mIndex < numTables;
-	case ExportType::GlobalIndex: return mIndex < numGlobals;
-	default:
-		assert(false);
-	}
-}
-
-void Export::print(std::ostream& out) const
-{
-	out << "Export: '" << mName << "' " << mExportType.name() << " " << mIndex;
-}
-
-Nullable<const std::vector<Expression>> Element::initExpressions() const
-{
-	if (mInitExpressions.index() == 1) {
-		return { std::get<1>(mInitExpressions) };
+	if (idx < uncompressedLocals.size()) {
+		return uncompressedLocals[idx];
 	}
 
 	return {};
 }
 
-void Element::print(std::ostream& out) const
+bool BytecodeFunction::hasLocals() const
 {
-	out << "Element: " << refType.name() << " " << mMode.name() << " table: " << tableIndex();
-	if (mTablePosition) {
-		out << " offset: ";
-		mTablePosition->tableOffset.printBytes(out);
+	return type.parameters().size() < uncompressedLocals.size();
+}
+
+u32 BytecodeFunction::operandStackSectionOffsetInBytes() const
+{
+	if (uncompressedLocals.empty()) {
+		return 0;
 	}
 
-	if (mInitExpressions.index() == 0) {
-		for (auto func : std::get<0>(mInitExpressions)) {
-			out << std::endl << "    - func idx " << func;
+	auto& lastLocal = uncompressedLocals.back();
+	auto byteOffset= lastLocal.offset + lastLocal.type.sizeInBytes();
+
+	// Manually add the size of FP + SP, if there are only parameters
+	if (!hasLocals()) {
+		byteOffset += 16;
+	}
+
+	return byteOffset;
+}
+
+u32 BytecodeFunction::localsSizeInBytes() const
+{
+	if (!hasLocals()) {
+		return 0;
+	}
+
+	u32 beginLocalsByteOffset = uncompressedLocals[type.parameters().size()].offset;
+	u32 endLocalsByteOffset = operandStackSectionOffsetInBytes();
+
+	return endLocalsByteOffset - beginLocalsByteOffset;
+}
+
+void WASM::BytecodeFunction::uncompressLocalTypes(const std::vector<CompressedLocalTypes>& compressedLocals)
+{
+	// Count the parameters and locals
+	auto& params = type.parameters();
+	u32 numLocals = params.size();
+	for (auto& pack : compressedLocals) {
+		numLocals += pack.count;
+	}
+
+	uncompressedLocals.reserve(numLocals);
+
+	// Put all parameters
+	u32 byteOffset = 0;
+	for (auto param : params) {
+		uncompressedLocals.emplace_back(param, byteOffset);
+		byteOffset += param.sizeInBytes();
+	}
+
+	// Leave space for stack and frame pointer
+	byteOffset += 16;
+
+	// Decompress and put each local
+	for (auto& pack : compressedLocals) {
+		for (u32 i = 0; i != pack.count; i++) {
+			uncompressedLocals.emplace_back(pack.type, byteOffset);
+			byteOffset += pack.type.sizeInBytes();
 		}
 	}
-	else {
-		for (auto& expr : std::get<1>(mInitExpressions)) {
-			out << std::endl << "    - expr ";
-			expr.printBytes(out);
+}
+
+FunctionTable::FunctionTable(u32 idx, const TableType& tableType)
+	: index{ idx }, type{ tableType.valType() }, limits{ tableType.limits() }
+{
+	if (grow(limits.min(), {}) != 0) {
+		throw std::runtime_error{ "Could not init table" };
+	}
+}
+
+i32 FunctionTable::grow(i32 increase, Nullable<Function> item)
+{
+	auto oldSize = table.size();
+	if (limits.max().has_value() && oldSize + increase > *limits.max()) {
+		return -1;
+	}
+
+	try {
+		table.reserve(oldSize + increase);
+		table.insert(table.end(), increase, item);
+		return oldSize;
+	}
+	catch (std::bad_alloc& e) {
+		return -1;
+	}
+}
+
+void FunctionTable::init(const DecodedElement& element, u32 tableOffset, u32 elementOffset)
+{
+	// This has to be done during the linking step
+	assert(false);
+}
+
+
+void DecodedElement::initTableIfActive(std::vector<FunctionTable>& tables)
+{
+	if (mMode != ElementMode::Active) {
+		return;
+	}
+
+	assert(tableIndex < tables.size());
+	tables[tableIndex].init(*this, tableOffset, 0);
+}
+
+Memory::Memory(u32 idx, Limits l)
+	: index{ idx }, limits{ l } {
+	grow(limits.min());
+}
+
+i32 Memory::grow(i32 pageCountIncrease)
+{
+	auto oldByteSize = data.size();
+	auto oldPageCount = oldByteSize / PageSize;
+
+	if (limits.max().has_value() && oldPageCount + pageCountIncrease > *limits.max()) {
+		return -1;
+	}
+
+	try {
+		auto byteSizeIncrease = pageCountIncrease * PageSize;
+		data.reserve(oldByteSize + byteSizeIncrease);
+		data.insert(data.end(), byteSizeIncrease, 0x00);
+		return oldPageCount;
+	}
+	catch (std::bad_alloc& e) {
+		return -1;
+	}
+}
+
+u64 Memory::minBytes() const {
+	return limits.min() * PageSize;
+}
+
+std::optional<u64> Memory::maxBytes() const {
+	auto m = limits.max();
+	if (m.has_value()) {
+		return { *m * PageSize };
+	}
+
+	return {};
+}
+
+Module::Module(Buffer b, std::string p, std::string n, std::vector<FunctionType> ft, std::vector<BytecodeFunction> fs, std::vector<FunctionTable> ts, std::vector<Memory> ms, ExportTable ex, std::vector<FunctionImport> imFs, std::vector<TableImport> imTs, std::vector<MemoryImport> imMs, std::vector<GlobalImport> imGs)
+	: path{ std::move(p) },
+	mName{ std::move(n) },
+	data{ std::move(b) },
+	functionTypes{ std::move(ft) },
+	functions{ std::move(fs) },
+	functionTables{ std::move(ts) },
+	memories{ std::move(ms) },
+	unlinkedImports{
+		{
+			std::move(imFs),
+			std::move(imTs),
+			std::move(imMs),
+			std::move(imGs)
 		}
-	}
+	},
+	exports{ std::move(ex) }
+{
+	numImportedFunctions = unlinkedImports->importedFunctions.size();
+	numImportedTables = unlinkedImports->importedTables.size();
+	numImportedMemories = unlinkedImports->importedMemories.size();
+	numImportedGlobals = unlinkedImports->importedGlobals.size();
 }
 
-void FunctionCode::print(std::ostream& out) const
+
+Nullable<Function> WASM::Module::functionByIndex(u32 idx)
 {
-	out << "Function code: ";
-
-	for (auto& types : compressedLocalTypes) {
-		out << "(" << types.count << "x " << types.type.name() << ") ";
-	}
-
-	out << std::endl << "    Code: ";
-	code.printBytes(out);
-}
-
-void FunctionCode::printBody(std::ostream& out) const
-{
-	code.print(out);
-}
-
-void Expression::printBytes(std::ostream& out) const
-{
-	mBytes.print(out);
-}
-
-void Expression::print(std::ostream& out) const
-{
-	for (auto& ins : mInstructions) {
-		out << "\n  - ";
-		ins.print(out, mBytes);
-	}
-}
-
-void ModuleValidator::validate(const ParsingState& parser)
-{
-	parsingState = &parser;
-
-	// Under module context C
-
-	if (s().functions.size() != s().functionCodes.size()) {
-		throwValidationError("Parsed different number of function declarations than function codes");
-	}
-
-	for (u32 i = 0; i != s().functions.size(); i++) {
-		validateFunction(i);
-	}
-
-	if (s().startFunction.has_value()) {
-		validateStartFunction(*s().startFunction);
-	}
-
-	// TODO: Validate imports
-
-	for (auto& exp : s().exports) {
-		validateExport(exp);
-	}
-
-	// Under context C'
-
-	for (auto& table : s().tableTypes) {
-		validateTableType(table);
-	}
-
-	for (auto& mem : s().memoryTypes) {
-		validateMemoryType(mem);
-	}
-
-	if (s().memoryTypes.size() > 1) {
-		throwValidationError("More than one memory is not allowed");
-	}
-
-	for (auto& global : s().globals) {
-		validateGlobal(global);
-	}
-
-	for (auto& elem : s().elements) {
-		validateElementSegment(elem);
-	}
-
-	// TODO: Validate data segments
-
-	parsingState = nullptr;
-}
-
-const FunctionType& ModuleValidator::functionTypeByIndex(u32 funcIdx)
-{
-	u32 typeIdx;
-	if (funcIdx < s().importedFunctions.size()) {
-		typeIdx= s().importedFunctions[funcIdx];
-	}
-
-	funcIdx -= s().importedFunctions.size();
-	if (funcIdx > s().functions.size()) {
-		throwValidationError("Invalid function index");
-	}
-	
-	typeIdx= s().functions[funcIdx];
-	if (typeIdx > s().functionTypes.size()) {
-		throwValidationError("Function references invalid type index");
-	}
-	return s().functionTypes[typeIdx];
-}
-
-void ModuleValidator::validateFunction(u32 funcNum)
-{
-	auto typeIdx = s().functions[funcNum];
-	if (typeIdx > s().functionTypes.size()) {
-		throwValidationError("Function references invalid type index");
-	}
-
-	auto& type = s().functionTypes[typeIdx];
-	auto& code = s().functionCodes[funcNum];
-
-	setFunctionContext( type, code );
-	valueStack.clear();
-	controlStack.clear();
-
-	controlStack.emplace_back(InstructionType::NoOperation, BlockTypeIndex{BlockType::TypeIndex, typeIdx}, 0, false);
-
-	for (auto& ins : code) {
-		validateOpcode(ins);
-	}
-
-	std::cout << "Validated function " << funcNum << " with type ";
-	type.print(std::cout);
-	std::cout << std::endl;
-}
-
-void ModuleValidator::validateTableType(const TableType& t)
-{
-	constexpr u32 tableRange = 0xFFFFFFFF;
-	if (!t.limits().isValid(tableRange)) {
-		throwValidationError("Invalid table limits definition");
-	}
-
-	std::cout << "Validated table type" << std::endl;
-}
-
-void ModuleValidator::validateMemoryType(const MemoryType& m)
-{
-	constexpr u32 memoryRange = 0xFFFF;
-	if (!m.limits().isValid(memoryRange)) {
-		throwValidationError("Invalid range limits definition");
-	}
-
-	std::cout << "Validated memory type" << std::endl;
-}
-
-void ModuleValidator::validateExport(const Export& e)
-{
-	auto numFunctions = s().functions.size() + s().importedFunctions.size();
-	auto numTables = s().tableTypes.size() + s().importedTableTypes.size();
-	auto numMemories = s().memoryTypes.size() + s().importedMemoryTypes.size();
-	auto numGlobals = s().globals.size() + s().importedGlobalTypes.size();
-	if (!e.isValid(numFunctions, numTables, numMemories, numGlobals)) {
-		throwValidationError("Export references invalid index");
-	}
-
-	// Try insert the name and throw if it already exists
-	auto result= exportNames.emplace(e.name());
-	if ( !result.second ) {
-		throwValidationError("Duplicate export name");
-	}
-
-	std::cout << "Validated export '" << e.name() << "'" << std::endl;
-}
-
-void ModuleValidator::validateStartFunction(u32 idx)
-{
-	auto& funcType = functionTypeByIndex(idx);
-	if (!funcType.takesVoidReturnsVoid()) {
-		throwValidationError("Start function has wrong type");
-	}
-
-	std::cout << "Validated start function" << std::endl;
-}
-
-void ModuleValidator::validateGlobal(const Global& global)
-{
-	validateConstantExpression(global.initExpression(), global.valType());
-}
-
-void ModuleValidator::validateElementSegment(const Element& elem)
-{
-	auto initExpressions = elem.initExpressions();
-	if (initExpressions.has_value()) {
-		for (auto& expr : *initExpressions) {
-			validateConstantExpression(expr, elem.valType());
-		}
-	}
-	else {
-		if (elem.valType() != ValType::FuncRef) {
-			throwValidationError("Element segment cannot be initialized with function references, wrong type.");
-		}
-	}
-
-	if (elem.mode() == ElementMode::Active) {
-		// FIXME: Assume that C.tables[x] means the local module only. 
-		// The current context C' does not have any tables defined. Or does it?
-
-		auto tableIdx = elem.tableIndex();
-		if (tableIdx >= s().tableTypes.size()) {
-			throwValidationError("Element segment references invalid table index");
+	if (idx < numImportedFunctions) {
+		if (unlinkedImports.has_value()) {
+			return unlinkedImports->importedFunctions[idx].resolvedFunction;
 		}
 
-		auto& table = s().tableTypes[tableIdx];
-		if (table.valType() != elem.valType()) {
-			throwValidationError("Element segment type missmatch with reference table");
-		}
-
-		auto& tablePos = elem.tablePosition();
-		assert(tablePos.has_value());
-		
-		validateConstantExpression(tablePos->tableOffset, ValType::I32);
-	}
-
-	std::cout << "Validated element segment" << std::endl;
-}
-
-void ModuleValidator::validateConstantExpression(const Expression& exp, ValType expectedType)
-{
-	// Only instructions that return something on the stack are allowed, and only
-	// one result [t] is expected on the stack. Therefore, only one instruction plus
-	// 'End' can occur
-	if (exp.size() > 2) {
-		throwValidationError("Wrong stack type for init expression");
-	}
-
-	auto& ins = *exp.begin();
-	if (!ins.isConstant() && ins != InstructionType::End) {
-		throwValidationError("Non-const instruction in init expression");
-	}
-
-	auto resultType = ins.constantType();
-	if (resultType.has_value() && *resultType != expectedType) {
-		throwValidationError("Constant expression yields unexpected type");
-	}
-
-	if (ins == InstructionType::GlobalGet) {
-		// TODO: Constant GlobalGet is only allowed for imported globals, which do not exist yet
-		assert(false);
-	}
-
-	std::cout << "Validated global" << std::endl;
-}
-
-void WASM::ModuleValidator::setFunctionContext(const FunctionType& type, const FunctionCode& code)
-{
-	currentFunctionType = &type;
-	currentLocals = &code.locals();
-}
-
-void ModuleValidator::pushValue(ValType type)
-{
-	valueStack.emplace_back(type);
-}
-
-ModuleValidator::ValueRecord ModuleValidator::popValue()
-{
-	if (controlStack.empty()) {
-		throwValidationError("Control stack is empty");
-	}
-
-	auto& frame = controlStack.back();
-	if (valueStack.size() == frame.height && frame.unreachable) {
 		return {};
 	}
 
-	if (valueStack.size() == frame.height) {
-		throwValidationError("Value stack underflows current block height");
-	}
-
-	if (valueStack.empty()) {
-		throwValidationError("Value stack underflow");
-	}
-
-	auto valueTop = valueStack.back();
-	valueStack.pop_back();
-	return valueTop;
+	idx -= numImportedFunctions;
+	assert(idx < functions.size());
+	return functions[idx];
 }
 
-ModuleValidator::ValueRecord ModuleValidator::popValue(ValueRecord expected)
+std::optional<ExportItem> WASM::Module::exportByName(const std::string& name, ExportType type)
 {
-	auto actual = popValue();
-	if (!expected.has_value() || !actual.has_value()) {
-		return actual;
+	auto findFunction = exports.find(name);
+	if (findFunction == exports.end()) {
+		return {};
 	}
 
-	if (*expected == *actual) {
-		return actual;
+	auto& exp = findFunction->second;
+	if (exp.mExportType != type) {
+		return {};
 	}
 
-	throwValidationError("Stack types differ");
+	return exp;
 }
 
-void ModuleValidator::pushValues(const std::vector<ValType>& types)
+Nullable<Function> Module::exportedFunctionByName(const std::string& name)
 {
-	valueStack.reserve(valueStack.size()+ types.size());
+	auto exp = exportByName(name, ExportType::FunctionIndex);
+	if (!exp.has_value()) {
+		return {};
+	}
+
+	return functionByIndex(exp->mIndex);
+}
+
+/*void ModuleLinker::link()
+{
+	if (!module.needsLinking()) {
+		throwCompilationError("Module already linked");
+	}
+
+	// TODO: Linking
+	// for (auto& func : module.unlinkedImports->importedFunctions) {
+		// func.
+	// }
+}*/
+
+
+
+std::variant<BlockTypeParameters, BlockTypeResults> ModuleCompiler::ControlFrame::labelTypes() const
+{
+	if (opCode == InstructionType::Loop) {
+		return { blockTypeIndex.parameters() };
+	}
+
+	return { blockTypeIndex.results() };
+}
+
+void ModuleCompiler::ControlFrame::appendAddressPatchRequest(ModuleCompiler& comp, AddressPatchRequest request)
+{
+	if (addressPatchList.has_value()) {
+		addressPatchList = comp.addressPatches.add(*addressPatchList, request);
+	}
+	else {
+		addressPatchList = comp.addressPatches.add(request);
+	}
+}
+
+void ModuleCompiler::ControlFrame::processAddressPatchRequests(ModuleCompiler& comp)
+{
+	// Loops do not need any patching, as they only receive back jumps
+	if (opCode == InstructionType::Loop) {
+		return;
+	}
+
+	// Patch the jump printed by the if-bytecode, if there was no else-block
+	if (elseLabelAddressPatch.has_value()) {
+		comp.patchAddress(*elseLabelAddressPatch);
+	}
+
+	while (addressPatchList.has_value()) {
+		auto& request = comp.addressPatches[*addressPatchList];
+		comp.patchAddress(request);
+
+		addressPatchList = comp.addressPatches.remove(*addressPatchList);
+	}
+}
+
+void ModuleCompiler::compile()
+{
+	for (auto& function : module.functions) {
+		compileFunction(function);
+	}
+}
+
+void ModuleCompiler::setFunctionContext(const BytecodeFunction& function)
+{
+	currentFunction = &function;
+}
+
+void ModuleCompiler::compileFunction(BytecodeFunction& function)
+{
+	resetBytecodePrinter();
+
+	setFunctionContext(function);
+
+	auto typeIdx = function.typeIndex();
+	controlStack.emplace_back(InstructionType::NoOperation, BlockTypeIndex{ BlockType::TypeIndex, typeIdx }, 0, 0, false, 0);
+
+	// Print entry bytecode if the function has any locals
+	auto localsSizeInBytes = function.localsSizeInBytes();
+	if (localsSizeInBytes > 0) {
+		assert(localsSizeInBytes % 4 == 0);
+		print(Bytecode::Entry);
+		printU32(localsSizeInBytes / 4);
+	}
+
+	u32 insCounter = 0;
+	for (auto& ins : function.expression()) {
+		compileInstruction(ins, insCounter++);
+	}
+
+	auto modName = module.name();
+	if (modName.size() > 20) {
+		modName = "..." + modName.substr(modName.size() - 17);
+	}
+	std::cout << "Compiled function " << modName << " " << function.index() << std::endl;
+	printBytecode(std::cout);
+}
+
+void ModuleCompiler::pushValue(ValType type)
+{
+	valueStack.emplace_back(type);
+	stackHeightInBytes += type.sizeInBytes();
+}
+
+void ModuleCompiler::pushValues(const std::vector<ValType>& types)
+{
+	valueStack.reserve(valueStack.size() + types.size());
 	valueStack.insert(valueStack.end(), types.begin(), types.end());
+
+	for (auto type : types) {
+		stackHeightInBytes += type.sizeInBytes();
+	}
 }
 
-void ModuleValidator::pushValues(const BlockTypeParameters& parameters)
+void ModuleCompiler::pushValues(const BlockTypeParameters& parameters)
 {
 	if (parameters.has_value()) {
-		if (*parameters >= s().functionTypes.size()) {
-			throwValidationError("Block type index references invalid function type");
+		if (*parameters >= module.functionTypes.size()) {
+			throwCompilationError("Block type index references invalid function type");
 		}
-		auto& type = s().functionTypes[*parameters];
+		auto& type = module.functionTypes[*parameters];
 		pushValues(type.parameters());
 	}
 }
 
-void ModuleValidator::pushValues(const BlockTypeResults& results)
+void ModuleCompiler::pushValues(const BlockTypeResults& results)
 {
 	if (results == BlockType::TypeIndex) {
-		if (results.index >= s().functionTypes.size()) {
-			throwValidationError("Block type index references invalid function type");
+		if (results.index >= module.functionTypes.size()) {
+			throwCompilationError("Block type index references invalid function type");
 		}
-		auto& type = s().functionTypes[results.index];
+		auto& type = module.functionTypes[results.index];
 		pushValues(type.results());
 		return;
 	}
@@ -1054,7 +375,7 @@ void ModuleValidator::pushValues(const BlockTypeResults& results)
 	}
 }
 
-void ModuleValidator::pushValues(const ModuleValidator::LabelTypes& types)
+void ModuleCompiler::pushValues(const ModuleCompiler::LabelTypes& types)
 {
 	if (types.index() == 0) {
 		pushValues(std::get<0>(types));
@@ -1064,37 +385,158 @@ void ModuleValidator::pushValues(const ModuleValidator::LabelTypes& types)
 	}
 }
 
-void ModuleValidator::resetCachedReturnList(u32 expectedSize)
+void ModuleCompiler::resetCachedReturnList(u32 expectedSize)
 {
 	cachedReturnList.clear();
 	cachedReturnList.reserve(expectedSize);
 	cachedReturnList.assign(expectedSize, ValueRecord{});
 }
 
-ValType WASM::ModuleValidator::localByIndex(u32 idx) const
+BytecodeFunction::LocalOffset ModuleCompiler::localByIndex(u32 idx) const
 {
-	assert(currentFunctionType && currentLocals);
+	assert(currentFunction);
 
-	auto& params = currentFunctionType->parameters();
-	if (idx < params.size()) {
-		return params[idx];
+	auto local = currentFunction->localByIndex(idx);
+	if (local.has_value()) {
+		return *local;
 	}
 
-	idx -= params.size();
-	for (auto& pack : *currentLocals) {
-		if (idx < pack.count) {
-			return pack.type;
-		}
-
-		idx -= pack.count;
-	}
-
-	throwValidationError("Local index out of bounds");
+	throwCompilationError("Local index out of bounds");
 }
 
-std::vector<ModuleValidator::ValueRecord>& ModuleValidator::popValues(const std::vector<ModuleValidator::ValueRecord>& expected)
+const FunctionType& WASM::ModuleCompiler::blockTypeByIndex(u32 idx)
 {
-	resetCachedReturnList(expected.size());
+	if (idx >= module.functionTypes.size()) {
+		throwCompilationError("Block type index references invalid function type");
+	}
+	return module.functionTypes[idx];
+}
+
+u32 WASM::ModuleCompiler::measureMaxPrintedBlockLength(u32 startInstruction, u32 labelIdx, bool runToElse) const
+{
+	assert(currentFunction);
+
+	if (labelIdx >= controlStack.size()) {
+		throwCompilationError("Control stack underflow when measuring block length");
+	}
+
+	assert(!runToElse || labelIdx == 0);
+
+	i32 expectedNestingDepth = -labelIdx;
+	i32 relativeNestingDepth = 0;
+	u32 distance = 0;
+	auto& code = currentFunction->expression();
+	for (u32 i = startInstruction + 1; i < code.size(); i++) {
+		if (code[i] == InstructionType::Block || code[i] == InstructionType::Loop || code[i] == InstructionType::If) {
+			relativeNestingDepth++;
+		}
+		else if (code[i] == InstructionType::End) {
+			if (relativeNestingDepth == expectedNestingDepth) {
+				return distance;
+			}
+			relativeNestingDepth--;
+		}
+		else if (code[i] == InstructionType::Else) {
+			if (relativeNestingDepth == 0 && runToElse) {
+				return distance;
+			}
+		}
+		distance += code[i].maxPrintedByteLength(currentFunction->expression().bytes());
+	}
+
+	throwCompilationError("Invalid block nesting while measuring block length");
+}
+
+void WASM::ModuleCompiler::requestAddressPatch(u32 labelIdx, bool isNearJump, bool elseLabel)
+{
+	if (labelIdx >= controlStack.size()) {
+		throwCompilationError("Control stack underflow when requesting address patch");
+	}
+
+	AddressPatchRequest req{ printedBytecode.size(), isNearJump };
+	auto& frame = controlStack[controlStack.size() - labelIdx - 1];
+
+	// Loops do not need address patching as they are always jumped back to
+	assert(frame.opCode != InstructionType::Loop);
+
+	if (elseLabel) {
+		frame.elseLabelAddressPatch = req;
+	}
+	else {
+		frame.appendAddressPatchRequest(*this, req);
+	}
+
+	// Print placeholder values
+	if (isNearJump) {
+		printU8(0xFF);
+	}
+	else {
+		printU32(0xFF00FF00);
+	}
+}
+
+void ModuleCompiler::patchAddress(const AddressPatchRequest& request)
+{
+	auto targetAddress = printedBytecode.size();
+	i32 distance = targetAddress - request.locationToPatch;
+
+	assert(!request.isNearJump || isShortDistance(distance));
+	if (isReachable()) {
+		if (request.isNearJump) {
+			printedBytecode[request.locationToPatch] = distance;
+		}
+		else {
+			printedBytecode.writeLittleEndianU32(request.locationToPatch, distance);
+		}
+	}
+}
+
+ModuleCompiler::ValueRecord ModuleCompiler::popValue()
+{
+	if (controlStack.empty()) {
+		throwCompilationError("Control stack is empty");
+	}
+
+	auto& frame = controlStack.back();
+	if (valueStack.size() == frame.height && frame.unreachable) {
+		return {};
+	}
+
+	if (valueStack.size() == frame.height) {
+		throwCompilationError("Value stack underflows current block height");
+	}
+
+	if (valueStack.empty()) {
+		throwCompilationError("Value stack underflow");
+	}
+
+	auto valueTop = valueStack.back();
+	valueStack.pop_back();
+
+	if (valueTop.has_value()) {
+		stackHeightInBytes -= valueTop->sizeInBytes();
+	}
+
+	return valueTop;
+}
+
+ModuleCompiler::ValueRecord ModuleCompiler::popValue(ValueRecord expected)
+{
+	auto actual = popValue();
+	if (!expected.has_value() || !actual.has_value()) {
+		return actual;
+	}
+
+	if (*expected == *actual) {
+		return actual;
+	}
+
+	throwCompilationError("Stack types differ");
+}
+
+void ModuleCompiler::popValues(const std::vector<ModuleCompiler::ValueRecord>& expected)
+{
+	/*resetCachedReturnList(expected.size());
 
 	// Iterate in reverse
 	auto insertIt = cachedReturnList.rend();
@@ -1102,10 +544,20 @@ std::vector<ModuleValidator::ValueRecord>& ModuleValidator::popValues(const std:
 		*(insertIt++) = popValue(*it);
 	}
 
-	return cachedReturnList;
+	return cachedReturnList;*/
+	for (auto it = expected.rbegin(); it != expected.rend(); it++) {
+		popValue(*it);
+	}
 }
 
-std::vector<ModuleValidator::ValueRecord>& ModuleValidator::popValues(const std::vector<ValType>& expected)
+void ModuleCompiler::popValues(const std::vector<ValType>& expected)
+{
+	for (auto it = expected.rbegin(); it != expected.rend(); it++) {
+		popValue(*it);
+	}
+}
+
+const std::vector<ModuleCompiler::ValueRecord>& ModuleCompiler::popValuesToList(const std::vector<ValType>& expected)
 {
 	resetCachedReturnList(expected.size());
 
@@ -1118,20 +570,17 @@ std::vector<ModuleValidator::ValueRecord>& ModuleValidator::popValues(const std:
 	return cachedReturnList;
 }
 
-std::vector<ModuleValidator::ValueRecord>& ModuleValidator::popValues(const BlockTypeResults& expected) {
+const std::vector<ModuleCompiler::ValueRecord>& ModuleCompiler::popValuesToList(const BlockTypeResults& expected) {
 	if (expected == BlockType::TypeIndex) {
-		if (expected.index >= s().functionTypes.size()) {
-			throwValidationError("Block type index references invalid function type");
-		}
-		auto& type = s().functionTypes[expected.index];
-		return popValues(type.results());
+		auto& type = blockTypeByIndex(expected.index);
+		return popValuesToList(type.results());
 	}
 
 	if (expected == BlockType::ValType) {
 		resetCachedReturnList(1);
 		auto valType = ValType::fromInt(expected.index);
 		assert(valType.isValid());
-		cachedReturnList[0]= popValue(valType);
+		cachedReturnList[0] = popValue(valType);
 		return cachedReturnList;
 	}
 
@@ -1139,100 +588,292 @@ std::vector<ModuleValidator::ValueRecord>& ModuleValidator::popValues(const Bloc
 	return cachedReturnList;
 }
 
-std::vector<ModuleValidator::ValueRecord>& ModuleValidator::popValues(const BlockTypeParameters& expected) {
+void ModuleCompiler::popValues(const BlockTypeResults& expected) {
+	if (expected == BlockType::TypeIndex) {
+		auto& type = blockTypeByIndex(expected.index);
+		return popValues(type.results());
+	}
+
+	if (expected == BlockType::ValType) {
+		auto valType = ValType::fromInt(expected.index);
+		assert(valType.isValid());
+		popValue(valType);
+	}
+}
+
+const std::vector<ModuleCompiler::ValueRecord>& ModuleCompiler::popValuesToList(const BlockTypeParameters& expected) {
 	if (expected.has_value()) {
-		if (*expected >= s().functionTypes.size()) {
-			throwValidationError("Block type index references invalid function type");
-		}
-		auto& type = s().functionTypes[*expected];
-		return popValues(type.parameters());
+		auto& type = blockTypeByIndex(*expected);
+		return popValuesToList(type.parameters());
 	}
 
 	resetCachedReturnList(0);
 	return cachedReturnList;
 }
 
-std::vector<ModuleValidator::ValueRecord>& ModuleValidator::popValues(const ModuleValidator::LabelTypes& types)
+void ModuleCompiler::popValues(const BlockTypeParameters& expected) {
+	if (expected.has_value()) {
+		auto& type = blockTypeByIndex(*expected);
+		popValues(type.parameters());
+	}
+}
+
+const std::vector<ModuleCompiler::ValueRecord>& ModuleCompiler::popValuesToList(const ModuleCompiler::LabelTypes& types)
 {
 	if (types.index() == 0) {
-		return popValues(std::get<0>(types));
+		return popValuesToList(std::get<0>(types));
 	}
 
-	return popValues(std::get<1>(types));
+	return popValuesToList(std::get<1>(types));
 }
 
-void ModuleValidator::pushControlFrame(InstructionType opCode, BlockTypeIndex blockTypeIndex)
+void ModuleCompiler::popValues(const ModuleCompiler::LabelTypes& types)
 {
-	controlStack.emplace_back(opCode, blockTypeIndex, valueStack.size(), false);
-	pushValues(blockTypeIndex.parameters());
+	if (types.index() == 0) {
+		popValues(std::get<0>(types));
+		return;
+	}
+
+	popValues(std::get<1>(types));
 }
 
-ModuleValidator::ControlFrame ModuleValidator::popControlFrame()
+ModuleCompiler::ControlFrame& ModuleCompiler::pushControlFrame(InstructionType opCode, BlockTypeIndex blockTypeIndex)
+{
+	auto& newFrame = controlStack.emplace_back(opCode, blockTypeIndex, valueStack.size(), stackHeightInBytes, false, printedBytecode.size());
+	pushValues(blockTypeIndex.parameters());
+
+	return newFrame;
+}
+
+ModuleCompiler::ControlFrame ModuleCompiler::popControlFrame()
 {
 	if (controlStack.empty()) {
-		throwValidationError("Control stack underflow");
+		throwCompilationError("Control stack underflow");
 	}
 
 	auto& frame = controlStack.back();
 	popValues(frame.blockTypeIndex.results());
 	if (valueStack.size() != frame.height) {
-		throwValidationError("Value stack height missmatch");
+		throwCompilationError("Value stack height missmatch");
 	}
 
 	controlStack.pop_back();
 	return frame;
 }
 
-void ModuleValidator::setUnreachable()
+void ModuleCompiler::setUnreachable()
 {
 	if (controlStack.empty()) {
-		throwValidationError("Control stack underflow");
+		throwCompilationError("Control stack underflow");
 	}
 
 	auto& frame = controlStack.back();
 	valueStack.resize(frame.height);
+	stackHeightInBytes = frame.heightInBytes;
 	frame.unreachable = true;
 }
 
-void WASM::ModuleValidator::validateOpcode(Instruction instruction)
+bool WASM::ModuleCompiler::isReachable() const
+{
+	if (controlStack.empty()) {
+		throwCompilationError("Control stack is empty");
+	}
+
+	auto& frame = controlStack.back();
+	return !frame.unreachable;
+}
+
+void ModuleCompiler::resetBytecodePrinter()
+{
+	printedBytecode.clear();
+	valueStack.clear();
+	controlStack.clear();
+	addressPatches.clear();
+	stackHeightInBytes = 0;
+}
+
+void ModuleCompiler::print(Bytecode c)
+{
+	std::cout << "  Printed at " << printedBytecode.size() << " bytecode: " << c.name() << std::endl;
+	printedBytecode.appendU8(c);
+}
+
+void ModuleCompiler::printU8(u8 x)
+{
+	std::cout << "  Printed at " << printedBytecode.size() << " u8: " << (int) x << std::endl;
+	printedBytecode.appendU8(x);
+}
+
+void ModuleCompiler::printU32(u32 x)
+{
+	std::cout << "  Printed at " << printedBytecode.size() << " u32: " << x << std::endl;
+	printedBytecode.appendLittleEndianU32(x);
+}
+
+void ModuleCompiler::printU64(u64 x)
+{
+	std::cout << "  Printed at " << printedBytecode.size() << " u64: " << x << std::endl;
+	printedBytecode.appendLittleEndianU64(x);
+}
+
+void ModuleCompiler::printF32(f32 f)
+{
+	std::cout << "  Printed at " << printedBytecode.size() << " f32: " << f << " as " << reinterpret_cast<u32&>(f) << std::endl;
+	printedBytecode.appendLittleEndianU32(reinterpret_cast<u32&>(f));
+}
+
+void ModuleCompiler::printF64(f64 f)
+{
+	std::cout << "  Printed at " << printedBytecode.size() << " f64: " << f << " as " << reinterpret_cast<u64&>(f) << std::endl;
+	printedBytecode.appendLittleEndianU32(reinterpret_cast<u64&>(f));
+}
+
+void ModuleCompiler::printPointer(const void* p)
+{
+	printedBytecode.appendLittleEndianU64(reinterpret_cast<u64&>(p));
+	std::cout << "  Printed pointer: " << reinterpret_cast<u64&>(p) << std::endl;
+}
+
+void ModuleCompiler::printBytecodeExpectingNoArgumentsIfReachable(Instruction instruction)
+{
+	if (isReachable()) {
+		auto bytecode = instruction.toBytecode();
+		assert(bytecode.has_value());
+		print(*bytecode);
+
+		if (bytecode->arguments() != BytecodeArguments::None) {
+			throwCompilationError("Bytecode requires unexpected arguments");
+		}
+	}
+}
+
+void WASM::ModuleCompiler::printLocalGetSetTeeBytecodeIfReachable(
+	BytecodeFunction::LocalOffset local,
+	Bytecode near32,
+	Bytecode near64,
+	Bytecode far32,
+	Bytecode far64
+)
+{
+	if (!isReachable()) {
+		return;
+	}
+
+	// Check alignment
+	assert(local.offset % 4 == 0);
+	assert(stackHeightInBytes % 4 == 0);
+
+	u32 operandOffsetInBytes = currentFunction->operandStackSectionOffsetInBytes();
+	assert(operandOffsetInBytes % 4 == 0);
+
+	// Full stack size = current operand stack + function parameter section + FP + SP + function locals
+	u32 fullStackHeightInSlots = (stackHeightInBytes / 4) + (operandOffsetInBytes / 4);
+	u32 localSlotOffset= local.offset / 4;
+	u32 distance = fullStackHeightInSlots - localSlotOffset;
+
+	if (local.type.sizeInBytes() == 4) {
+		if (distance <= 255) {
+			print(near32);
+			printU8(distance);
+		}
+		else {
+			print(far32);
+			printU32(distance);
+		}
+	}
+	else if (local.type.sizeInBytes() == 8) {
+		if (distance) {
+			print(near64);
+			printU8(distance);
+		}
+		else {
+			print(far64);
+			printU32(distance);
+		}
+	}
+	else {
+		throwCompilationError("LocalGet instruction only implemented for 32bit and 64bit");
+	}
+}
+
+void ModuleCompiler::compileNumericConstantInstruction(Instruction instruction)
+{
+	auto opCode = instruction.opCode();
+	auto resultType = opCode.resultType();
+	assert(resultType.has_value());
+	pushValue(*resultType);
+
+	if (isReachable()) {
+		auto bytecode = instruction.toBytecode();
+		assert(bytecode.has_value());
+		print(*bytecode);
+
+		auto args = bytecode->arguments();
+		if (args == BytecodeArguments::SingleU32) {
+			printU32(instruction.asIF32Constant());
+		}
+		else if (args == BytecodeArguments::SingleU64) {
+			printU64(instruction.asIF64Constant());
+		}
+		else {
+			throwCompilationError("Bytecode requires unexpected arguments");
+		}
+	}
+}
+
+void ModuleCompiler::compileNumericUnaryInstruction(Instruction instruction)
+{
+	auto opCode = instruction.opCode();
+	auto operandType = opCode.operandType();
+	auto resultType = opCode.resultType();
+	assert(operandType.has_value() && resultType.has_value());
+	popValue(*operandType);
+	pushValue(*resultType);
+
+	printBytecodeExpectingNoArgumentsIfReachable(instruction);
+}
+
+
+void ModuleCompiler::compileNumericBinaryInstruction(Instruction instruction) {
+	auto opCode = instruction.opCode();
+	auto operandType = opCode.operandType();
+	auto resultType = opCode.resultType();
+	assert(operandType.has_value() && resultType.has_value());
+	popValue(*operandType);
+	popValue(*operandType);
+	pushValue(*resultType);
+
+	printBytecodeExpectingNoArgumentsIfReachable(instruction);
+}
+
+void ModuleCompiler::compileInstruction(Instruction instruction, u32 instructionCounter)
 {
 	auto opCode = instruction.opCode();
 	if (opCode.isConstant() && opCode != InstructionType::GlobalGet) {
-		auto resultType = opCode.resultType();
-		assert(resultType.has_value());
-		pushValue(*resultType);
+		compileNumericConstantInstruction(instruction);
 		return;
 	}
 
 	if (opCode.isUnary()) {
-		auto operandType = opCode.operandType();
-		auto resultType = opCode.resultType();
-		assert(operandType.has_value() && resultType.has_value());
-		popValue(*operandType);
-		pushValue(*resultType);
+		compileNumericUnaryInstruction(instruction);
 		return;
 	}
 
 	if (opCode.isBinary()) {
-		auto operandType = opCode.operandType();
-		auto resultType = opCode.resultType();
-		assert(operandType.has_value() && resultType.has_value());
-		popValue(*operandType);
-		popValue(*operandType);
-		pushValue(*resultType);
+		compileNumericBinaryInstruction(instruction);
 		return;
 	}
 
 	auto validateBlockTypeInstruction = [&]() {
-		auto blockType= instruction.blockTypeIndex();
+		auto blockType = instruction.blockTypeIndex();
 		popValues(blockType.parameters());
 		pushControlFrame(instruction.opCode(), blockType);
 	};
 
-	auto validateBranchTypeInstruction = [&]() {		
+	auto validateBranchTypeInstruction = [&]() {
 		auto label = instruction.branchLabel();
 		if (label > controlStack.size() || controlStack.empty()) {
-			throwValidationError("Branch label underflows control frame stack");
+			throwCompilationError("Branch label underflows control frame stack");
 		}
 
 		auto& frame = controlStack[controlStack.size() - label - 1];
@@ -1241,6 +882,48 @@ void WASM::ModuleValidator::validateOpcode(Instruction instruction)
 
 		return labelTypes;
 	};
+
+	auto printForwardJump = [&](Bytecode shortJump, Bytecode longJump, u32 label, bool isIf) {
+		if (isReachable()) {
+			// Consider the bytecode not yet printed -> +1
+			auto distance = 1+ measureMaxPrintedBlockLength(instructionCounter, 0, isIf);
+			if (isShortDistance(distance)) {
+				print(shortJump);
+				requestAddressPatch(label, true, isIf);
+			}
+			else {
+				print(longJump);
+				requestAddressPatch(label, false, isIf);
+			}
+		}
+	};
+
+	auto printBranchingJump = [&](Bytecode shortJump, Bytecode longJump) {
+		if (!isReachable()) {
+			return;
+		}
+
+		auto label = instruction.branchLabel();
+		auto& frame = controlStack[controlStack.size() - label - 1];
+
+		// Forward jump
+		if (frame.opCode != InstructionType::Loop) {
+			printForwardJump(shortJump, longJump, label, false);
+			return;
+		}
+
+		// Consider the bytecode not yet printed -> -1
+		i32 distance = frame.bytecodeOffset - printedBytecode.size() -1;
+		if (isShortDistance(distance)) {
+			print(shortJump);
+			printU8(distance);
+		}
+		else {
+			print(longJump);
+			printU32(distance);
+		}
+	};
+
 
 	using IT = InstructionType;
 	switch (opCode) {
@@ -1259,25 +942,40 @@ void WASM::ModuleValidator::validateOpcode(Instruction instruction)
 	case IT::If:
 		popValue(ValType::I32);
 		validateBlockTypeInstruction();
+		printForwardJump(Bytecode::IfFalseJumpShort, Bytecode::IfFalseJumpLong, 0, true);
 		return;
 
 	case IT::Else: {
 		auto frame = popControlFrame();
 		if (frame.opCode != InstructionType::If) {
-			throwValidationError("If block expected before else block");
+			throwCompilationError("If block expected before else block");
 		}
-		pushControlFrame(InstructionType::Else, frame.blockTypeIndex);
+
+		// Push the frame for the else-instruction, but transfert the address patch
+		// requests instead of processing them, to have them jump behind the else-block
+		auto& newFrame = pushControlFrame(InstructionType::Else, frame.blockTypeIndex);
+		newFrame.addressPatchList = std::move(frame.addressPatchList);
+
+		// Jump behind the else-block when leaving the if-block
+		printForwardJump(Bytecode::JumpShort, Bytecode::JumpLong, 0, false);
+
+		// Patch the address of the jump printed by the if-instruction
+		assert(frame.elseLabelAddressPatch.has_value());
+		patchAddress(*frame.elseLabelAddressPatch);
+
 		return;
 	}
 
 	case IT::End: {
 		auto frame = popControlFrame();
 		pushValues(frame.blockTypeIndex.results());
+		frame.processAddressPatchRequests(*this);
 		return;
 	}
 
 	case IT::Branch:
 		validateBranchTypeInstruction();
+		printBranchingJump(Bytecode::JumpShort, Bytecode::JumpLong);
 		setUnreachable();
 		return;
 
@@ -1285,60 +983,151 @@ void WASM::ModuleValidator::validateOpcode(Instruction instruction)
 		popValue(ValType::I32);
 		auto labelTypes = validateBranchTypeInstruction();
 		pushValues(labelTypes);
+		printBranchingJump(Bytecode::IfTrueJumpShort, Bytecode::IfTrueJumpLong);
 		return;
 	}
 
 	case IT::Return: {
 		if (controlStack.empty()) {
-			throwValidationError("Control stack underflow during return");
+			throwCompilationError("Control stack underflow during return");
 		}
 		popValues(controlStack[0].blockTypeIndex.results());
+
+		if (isReachable()) {
+			auto resultSpaceInBytes = currentFunction->functionType().resultStackSectionSizeInBytes();
+			assert(resultSpaceInBytes % 4 == 0);
+			auto resultSpaceInSlots = resultSpaceInBytes / 4;
+			if (resultSpaceInSlots <= 255) {
+				print(Bytecode::ReturnFew);
+				printU8(resultSpaceInSlots);
+			}
+			else {
+				print(Bytecode::ReturnMany);
+				printU32(resultSpaceInSlots);
+			}
+		}
+
 		setUnreachable();
 		return;
 	}
 
-	// case IT::BranchTable:
+				   // case IT::BranchTable:
 
 	case IT::Call: {
 		auto functionIdx = instruction.functionIndex();
-		auto& funcType = functionTypeByIndex(functionIdx);
+		auto function = module.functionByIndex(functionIdx);
+		assert(function.has_value());
+		auto bytecodeFunction = function->asBytecodeFunction();
+		assert(bytecodeFunction.has_value());
+		auto& funcType = bytecodeFunction->functionType();
 		popValues(funcType.parameters());
 		pushValues(funcType.results());
+
+		print(Bytecode::Call);
+		printPointer(bytecodeFunction.pointer());
+		printU32(funcType.parameterStackSectionSizeInBytes());
 		return;
 	}
 
-	case IT::Drop:
-		popValue();
+	case IT::Drop: {
+		auto type = popValue();
+		if (type.has_value() && isReachable()) {
+			if (type->sizeInBytes() == 4) {
+				print(Bytecode::I32Drop);
+			}
+			else if (type->sizeInBytes() == 8) {
+				print(Bytecode::I64Drop);
+			}
+			else {
+				throwCompilationError("Drop instruction only implemented for 32bit and 64bit");
+			}
+		}
 		return;
+	}
 
 	case IT::LocalGet: {
-		auto localType = localByIndex(instruction.localIndex());
-		pushValue(localType);
+		auto local = localByIndex(instruction.localIndex());
+		printLocalGetSetTeeBytecodeIfReachable(
+			local,
+			Bytecode::I32LocalGetNear,
+			Bytecode::I32LocalGetFar,
+			Bytecode::I64LocalGetNear,
+			Bytecode::I64LocalGetFar
+		);
+		pushValue(local.type);
 		return;
 	}
 
 	case IT::LocalSet: {
-		auto localType = localByIndex(instruction.localIndex());
-		popValue(localType);
+		auto local = localByIndex(instruction.localIndex());
+		popValue(local.type);
+		printLocalGetSetTeeBytecodeIfReachable(
+			local,
+			Bytecode::I32LocalSetNear,
+			Bytecode::I32LocalSetFar,
+			Bytecode::I64LocalSetNear,
+			Bytecode::I64LocalSetFar
+		);
 		return;
 	}
 
 	}
 
-	std::cerr << "Validation not implemented for instruction '" << opCode.name() << "'!" << std::endl;
-	throw std::runtime_error{ "Validation not implemented for instruction" };
+	std::cerr << "Compilation not implemented for instruction '" << opCode.name() << "'!" << std::endl;
+	throw std::runtime_error{ "Compilation not implemented for instruction" };
 }
 
-void ModuleValidator::throwValidationError(const char* msg) const
+void WASM::ModuleCompiler::printBytecode(std::ostream& out)
 {
-	throw ValidationError{ s().path, msg };
-}
+	using std::setw, std::hex, std::dec;
 
-std::variant<BlockTypeParameters, BlockTypeResults> ModuleValidator::ControlFrame::labelTypes() const
-{
-	if(opCode == InstructionType::Loop) {
-		return { blockTypeIndex.parameters() };
+	auto it = printedBytecode.iterator();
+	u32 idx = 0;
+	while (it.hasNext()) {
+		auto opCodeAddress = (u64)it.positionPointer();
+		out << "  " << setw(3) << idx << ": " << hex << opCodeAddress << "  ";
+
+		auto opCode = Bytecode::fromInt(it.nextU8());
+		out << setw(2) << (u32)opCode << " (" << opCode.name() << ")";
+
+		auto args = opCode.arguments();
+		if (args.isU64()) {
+			for (u32 i = 0; i != args.count(); i++) {
+				out << " " << it.nextLittleEndianU64();
+			}
+		}
+
+		u32 lastU32;
+		if (args.isU32()) {
+			for (u32 i = 0; i != args.count(); i++) {
+				lastU32 = it.nextLittleEndianU32();
+				out << " " << lastU32;
+			}
+		}
+
+		u8 lastU8= 0;
+		if (args.isU8()) {
+			for (u32 i = 0; i != args.count(); i++) {
+				lastU8 = it.nextU8();
+				out << " " << (u32)lastU8;
+			}
+		}
+
+		if (opCode == Bytecode::JumpShort || opCode == Bytecode::IfTrueJumpShort || opCode == Bytecode::IfFalseJumpShort) {
+			out << " (-> " << opCodeAddress+ 1 + (i8)lastU8 << ")";
+		} else if (opCode == Bytecode::JumpLong || opCode == Bytecode::IfTrueJumpLong || opCode == Bytecode::IfFalseJumpLong) {
+			out << " (-> " << opCodeAddress+ 1 + (i32)lastU32 << ")";
+		}
+
+		out << dec << std::endl;
+		idx++;
 	}
+}
 
-	return { blockTypeIndex.results() };
+void ModuleCompiler::throwCompilationError(const char* msg) const
+{
+	if (currentFunction) {
+		throw CompileError{ module.name(), currentFunction->index(), std::string{msg} };
+	}
+	throw CompileError{ module.name(), std::string{msg} };
 }

@@ -10,6 +10,7 @@ int main() {
 	try {
 		WASM::Interpreter interpreter;
 		interpreter.loadModule("C:/Users/Matthias/Documents/Uni/ABM/webassembly/webassembly/assemblyscript/helloworld/build/debug.wasm");
+		interpreter.compileAndLinkModules();
 	}
 	catch (WASM::Error& e) {
 		std::cerr << "\n\n========================================\n" << std::endl;

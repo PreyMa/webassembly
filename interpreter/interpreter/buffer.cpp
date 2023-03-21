@@ -67,7 +67,42 @@ Buffer& Buffer::operator=(Buffer&& other) noexcept
 	return *this;
 }
 
-BufferSlice Buffer::slice(u32 from, u32 to)
+void Buffer::appendU8(u8 val)
+{
+	mData.push_back(val);
+}
+
+void Buffer::appendLittleEndianU32(u32 val)
+{
+	writeLittleEndianU32(size(), val);
+}
+
+void Buffer::appendLittleEndianU64(u64 val)
+{
+	mData.push_back((val >> 0) & 0xFF);
+	mData.push_back((val >> 8) & 0xFF);
+	mData.push_back((val >> 16) & 0xFF);
+	mData.push_back((val >> 24) & 0xFF);
+	mData.push_back((val >> 32) & 0xFF);
+	mData.push_back((val >> 40) & 0xFF);
+	mData.push_back((val >> 48) & 0xFF);
+	mData.push_back((val >> 56) & 0xFF);
+}
+
+void WASM::Buffer::writeLittleEndianU32(sizeType pos, u32 val)
+{
+	assert(pos <= size());
+	if (pos + 4 > size()) {
+		mData.insert(mData.end(), pos + 4- size(), 0);
+	}
+
+	mData[pos+ 0]= (val >> 0) & 0xFF;
+	mData[pos+ 1]= (val >> 8) & 0xFF;
+	mData[pos+ 2]= (val >> 16) & 0xFF;
+	mData[pos+ 3]= (val >> 24) & 0xFF;
+}
+
+BufferSlice Buffer::slice(sizeType from, sizeType to)
 {
 	assert(from <= to);
 	assert(from <= size() && to <= size());
@@ -79,7 +114,7 @@ BufferIterator Buffer::iterator()
 	return { mData.data(), mData.data()+ mData.size() };
 }
 
-BufferSlice BufferSlice::slice(u32 from, u32 to)
+BufferSlice BufferSlice::slice(sizeType from, sizeType to)
 {
 	assert(from <= to);
 	assert(from <= mLength && to <= mLength);
