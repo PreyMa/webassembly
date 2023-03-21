@@ -959,7 +959,7 @@ void ModuleValidator::validate(const ParsingState& parser)
 		validateStartFunction(*s().startFunction);
 	}
 
-	// TODO: Validate imports
+	validateImports();
 
 	for (auto& exp : s().exports) {
 		validateExport(exp);
@@ -1115,6 +1115,25 @@ void ModuleValidator::validateElementSegment(const Element& elem)
 	}
 
 	std::cout << "Validated element segment" << std::endl;
+}
+
+void WASM::ModuleValidator::validateImports()
+{
+	std::cout << "# Validate imports:" << std::endl;
+	// TODO: Validate function imports
+	
+	// Validate table imports
+	for (auto& tableType : s().importedTableTypes) {
+		validateTableType(tableType.tableType);
+	}
+	
+	// Validate memory imports
+	for (auto& memType : s().importedMemoryTypes) {
+		validateMemoryType(memType.memoryType);
+	}
+	
+	// Validate global imports -> global types are valid
+	std::cout << "# Done validating imports" << std::endl;
 }
 
 void ModuleValidator::validateConstantExpression(const Expression& exp, ValType expectedType)

@@ -356,6 +356,7 @@ namespace WASM {
 		void validateStartFunction(u32);
 		void validateGlobal(const DeclaredGlobal&);
 		void validateElementSegment(const Element&);
+		void validateImports();
 
 		void validateConstantExpression(const Expression&, ValType);
 
