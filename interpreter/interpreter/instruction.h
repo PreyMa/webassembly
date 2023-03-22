@@ -226,6 +226,7 @@ namespace WASM {
 		bool isBlock() const;
 		bool isMemory() const;
 		bool requiresModuleInstance() const;
+		bool isBitCastConversionOnly() const;
 		std::optional<ValType> operandType() const;
 		std::optional<ValType> resultType() const;
 		std::optional<ValType> constantType() const;

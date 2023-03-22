@@ -337,10 +337,6 @@ const char* Bytecode::name() const {
 		case F64ConvertI64S: return "F64ConvertI64S";
 		case F64ConvertI64U: return "F64ConvertI64U";
 		case F64PromoteF32: return "F64PromoteF32";
-		case I32ReinterpretF32: return "I32ReinterpretF32";
-		case I64ReinterpretF64: return "I64ReinterpretF64";
-		case F32ReinterpretI32: return "F32ReinterpretI32";
-		case F64ReinterpretI64: return "F64ReinterpretI64";
 		case I32Extend8s: return "I32Extend8s";
 		case I32Extend16s: return "I32Extend16s";
 		case I64Extend8s: return "I64Extend8s";
@@ -566,10 +562,6 @@ BytecodeArguments WASM::Bytecode::arguments() const
 	case F64ConvertI64S:
 	case F64ConvertI64U:
 	case F64PromoteF32:
-	case I32ReinterpretF32:
-	case I64ReinterpretF64:
-	case F32ReinterpretI32:
-	case F64ReinterpretI64:
 	case I32Extend8s:
 	case I32Extend16s:
 	case I64Extend8s:

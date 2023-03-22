@@ -936,6 +936,44 @@ bool InstructionType::isUnary() const
 	case IT::F64Nearest:
 	case IT::I32EqualZero:
 	case IT::I64EqualZero:
+	case IT::I32WrapI64:
+	case IT::I32TruncateF32S:
+	case IT::I32TruncateF32U:
+	case IT::I32TruncateF64S:
+	case IT::I32TruncateF64U:
+	case IT::I64ExtendI32S:
+	case IT::I64ExtendI32U:
+	case IT::I64TruncateF32S:
+	case IT::I64TruncateF32U:
+	case IT::I64TruncateF64S:
+	case IT::I64TruncateF64U:
+	case IT::F32ConvertI32S:
+	case IT::F32ConvertI32U:
+	case IT::F32ConvertI64S:
+	case IT::F32ConvertI64U:
+	case IT::F32DemoteF64:
+	case IT::F64ConvertI32S:
+	case IT::F64ConvertI32U:
+	case IT::F64ConvertI64S:
+	case IT::F64ConvertI64U:
+	case IT::F64PromoteF32:
+	case IT::I32ReinterpretF32:
+	case IT::I64ReinterpretF64:
+	case IT::F32ReinterpretI32:
+	case IT::F64ReinterpretI64:
+	case IT::I32Extend8s:
+	case IT::I32Extend16s:
+	case IT::I64Extend8s:
+	case IT::I64Extend16s:
+	case IT::I64Extend32s:
+	case IT::I32TruncateSaturateF32S:
+	case IT::I32TruncateSaturateF32U:
+	case IT::I32TruncateSaturateF64S:
+	case IT::I32TruncateSaturateF64U:
+	case IT::I64TruncateSaturateF32S:
+	case IT::I64TruncateSaturateF32U:
+	case IT::I64TruncateSaturateF64S:
+	case IT::I64TruncateSaturateF64U:
 		return true;
 	default:
 		return false;
@@ -1027,6 +1065,19 @@ bool WASM::InstructionType::requiresModuleInstance() const
 	case DataDrop:
 	case MemoryCopy:
 	case MemoryFill:
+		return true;
+	default:
+		return false;
+	}
+}
+
+bool InstructionType::isBitCastConversionOnly() const
+{
+	switch (value) {
+	case I32ReinterpretF32:
+	case I64ReinterpretF64:
+	case F32ReinterpretI32:
+	case F64ReinterpretI64:
 		return true;
 	default:
 		return false;
@@ -1174,6 +1225,56 @@ std::optional<ValType> InstructionType::resultType() const
 		return ValType::F32;
 	case F64Load:
 		return ValType::F64;
+	case IT::I32WrapI64:
+	case IT::I32TruncateF32S:
+	case IT::I32TruncateF32U:
+	case IT::I32TruncateF64S:
+	case IT::I32TruncateF64U:
+		return ValType::I32;
+	case IT::I64ExtendI32S:
+	case IT::I64ExtendI32U:
+	case IT::I64TruncateF32S:
+	case IT::I64TruncateF32U:
+	case IT::I64TruncateF64S:
+	case IT::I64TruncateF64U:
+		return ValType::I64;
+	case IT::F32ConvertI32S:
+	case IT::F32ConvertI32U:
+	case IT::F32ConvertI64S:
+	case IT::F32ConvertI64U:
+	case IT::F32DemoteF64:
+		return ValType::F32;
+	case IT::F64ConvertI32S:
+	case IT::F64ConvertI32U:
+	case IT::F64ConvertI64S:
+	case IT::F64ConvertI64U:
+	case IT::F64PromoteF32:
+		return ValType::F64;
+	case IT::I32ReinterpretF32:
+		return ValType::I32;
+	case IT::I64ReinterpretF64:
+		return ValType::I64;
+	case IT::F32ReinterpretI32:
+		return ValType::F32;
+	case IT::F64ReinterpretI64:
+		return ValType::F64;
+	case IT::I32Extend8s:
+	case IT::I32Extend16s:
+		return ValType::I32;
+	case IT::I64Extend8s:
+	case IT::I64Extend16s:
+	case IT::I64Extend32s:
+		return ValType::I64;
+	case IT::I32TruncateSaturateF32S:
+	case IT::I32TruncateSaturateF32U:
+	case IT::I32TruncateSaturateF64S:
+	case IT::I32TruncateSaturateF64U:
+		return ValType::I32;
+	case IT::I64TruncateSaturateF32S:
+	case IT::I64TruncateSaturateF32U:
+	case IT::I64TruncateSaturateF64S:
+	case IT::I64TruncateSaturateF64U:
+		return ValType::I64;
 	default:
 		return {};
 	}
@@ -1307,7 +1408,67 @@ std::optional<ValType> InstructionType::operandType() const
 		return ValType::F32;
 	case IT::F32Store:
 		return ValType::F64;
-
+	case IT::I32WrapI64:
+		return ValType::I64;
+	case IT::I32TruncateF32S:
+		return ValType::F32;
+	case IT::I32TruncateF32U:
+		return ValType::F32;
+	case IT::I32TruncateF64S:
+		return ValType::F64;
+	case IT::I32TruncateF64U:
+		return ValType::F64;
+	case IT::I64ExtendI32S:
+	case IT::I64ExtendI32U:
+		return ValType::I32;
+	case IT::I64TruncateF32S:
+	case IT::I64TruncateF32U:
+		return ValType::F32;
+	case IT::I64TruncateF64S:
+	case IT::I64TruncateF64U:
+		return ValType::F64;
+	case IT::F32ConvertI32S:
+	case IT::F32ConvertI32U:
+		return ValType::I32;
+	case IT::F32ConvertI64S:
+	case IT::F32ConvertI64U:
+		return ValType::I64;
+	case IT::F32DemoteF64:
+		return ValType::F64;
+	case IT::F64ConvertI32S:
+	case IT::F64ConvertI32U:
+		return ValType::I32;
+	case IT::F64ConvertI64S:
+	case IT::F64ConvertI64U:
+		return ValType::I64;
+	case IT::F64PromoteF32:
+	case IT::I32ReinterpretF32:
+		return ValType::F32;
+	case IT::I64ReinterpretF64:
+		return ValType::F64;
+	case IT::F32ReinterpretI32:
+		return ValType::I32;
+	case IT::F64ReinterpretI64:
+		return ValType::I64;
+	case IT::I32Extend8s:
+	case IT::I32Extend16s:
+		return ValType::I32;
+	case IT::I64Extend8s:
+	case IT::I64Extend16s:
+	case IT::I64Extend32s:
+		return ValType::I64;
+	case IT::I32TruncateSaturateF32S:
+	case IT::I32TruncateSaturateF32U:
+		return ValType::F32;
+	case IT::I32TruncateSaturateF64S:
+	case IT::I32TruncateSaturateF64U:
+		return ValType::F64;
+	case IT::I64TruncateSaturateF32S:
+	case IT::I64TruncateSaturateF32U:
+		return ValType::F32;
+	case IT::I64TruncateSaturateF64S:
+	case IT::I64TruncateSaturateF64U:
+		return ValType::F64;
 	default:
 		return {};
 	} 
@@ -1847,10 +2008,11 @@ std::optional<Bytecode> Instruction::toBytecode() const
 		case IT::F64ConvertI64S: return BA::F64ConvertI64S;
 		case IT::F64ConvertI64U: return BA::F64ConvertI64U;
 		case IT::F64PromoteF32: return BA::F64PromoteF32;
-		case IT::I32ReinterpretF32: return BA::I32ReinterpretF32;
-		case IT::I64ReinterpretF64: return BA::I64ReinterpretF64;
-		case IT::F32ReinterpretI32: return BA::F32ReinterpretI32;
-		case IT::F64ReinterpretI64: return BA::F64ReinterpretI64;
+		case IT::I32ReinterpretF32:
+		case IT::I64ReinterpretF64:
+		case IT::F32ReinterpretI32:
+		case IT::F64ReinterpretI64:
+			return {};
 		case IT::I32Extend8s: return BA::I32Extend8s;
 		case IT::I32Extend16s: return BA::I32Extend16s;
 		case IT::I64Extend8s: return BA::I64Extend8s;

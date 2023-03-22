@@ -781,7 +781,7 @@ void ModuleCompiler::printPointer(const void* p)
 
 void ModuleCompiler::printBytecodeExpectingNoArgumentsIfReachable(Instruction instruction)
 {
-	if (isReachable()) {
+	if (isReachable() && !instruction.opCode().isBitCastConversionOnly()) {
 		auto bytecode = instruction.toBytecode();
 		assert(bytecode.has_value());
 		print(*bytecode);
