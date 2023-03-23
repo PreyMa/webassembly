@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include "module.h"
+#include "host_function.h"
 
 namespace WASM {
 	class Interpreter {

@@ -6,8 +6,18 @@
 
 using namespace WASM;
 
+HostFunctionBase::HostFunctionBase(FunctionType ft)
+	: mFunctionType{ std::move(ft) } {}
+
+void HostFunctionBase::print(std::ostream& out) const {
+	out << "Host function: ";
+	mFunctionType.print(out);
+}
+
 void Interpreter::loadModule(std::string path)
 {
+	// Loading another module might cause a reallocation in the modules vector, which
+	// would invalidate all the addresses in the bytecode
 	if (hasLinked) {
 		throw std::runtime_error{ "Cannot load module after linking step" };
 	}
@@ -34,7 +44,10 @@ void Interpreter::compileAndLinkModules()
 		throw std::runtime_error{ "Already linked" };
 	}
 
-	// TODO: Linking
+	{
+		ModuleLinker linker{ modules };
+		linker.link();
+	}
 
 	for (auto& module : modules) {
 		ModuleCompiler compiler{ *this, module };

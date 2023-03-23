@@ -386,7 +386,7 @@ void ModuleParser::parseCodeSection()
 	for (u32 i = 0; i != numFunctionCodes; i++) {
 		auto code= parseFunctionCode();
 
-		std::cout << "  - ";
+		std::cout << "  - " << i << " ";
 		code.print(std::cout);
 		std::cout << std::endl;
 

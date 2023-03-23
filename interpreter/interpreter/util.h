@@ -18,4 +18,32 @@ namespace WASM {
 	using f64 = double;
 
 	using sizeType = std::size_t;
+
+
+	namespace Detail {
+
+		template<typename ...T>
+		struct ParameterPack {};
+
+		// Based on https://stackoverflow.com/questions/64782121/deduce-lambda-return-and-arguments-passed-to-constructor
+		template<typename>
+		struct LambdaTyper;
+
+		template<typename R, typename C, typename... Args>
+		struct LambdaTyper<R(C::*)(Args...) const> {
+			using FunctionType = R(Args...);
+			using Result = R;
+			using Parameters = ParameterPack<Args...>;
+			using Class = C;
+		};
+
+		// For mutable lambdas
+		template<typename R, typename C, typename... Args>
+		struct LambdaTyper<R(C::*)(Args...)> {
+			using FunctionType = R(Args...);
+			using Result = R;
+			using Parameters = ParameterPack<Args...>;
+			using Class = C;
+		};
+	}
 }

@@ -1,6 +1,9 @@
 
 #pragma once
 
+#include <span>
+#include <functional>
+
 #include "decoding.h"
 #include "bytecode.h"
 #include "arraylist.h"
@@ -12,6 +15,8 @@ namespace WASM {
 		virtual ~Function() = default;
 
 		virtual Nullable<const BytecodeFunction> asBytecodeFunction() const { return {}; }
+		virtual Nullable<const HostFunctionBase> asHostFunction() const { return {}; }
+		virtual const FunctionType& functionType() const = 0;
 
 	private:
 	};
@@ -30,7 +35,7 @@ namespace WASM {
 		u32 index() const { return mIndex; }
 		u32 typeIndex() const { return mTypeIndex; }
 		const Expression& expression() const { return code; }
-		const FunctionType& functionType() const { return type; }
+		virtual const FunctionType& functionType() const override { return type; }
 
 		std::optional<LocalOffset> localByIndex(u32) const;
 		bool hasLocals() const;
@@ -48,10 +53,6 @@ namespace WASM {
 		FunctionType& type;
 		Expression code;
 		std::vector<LocalOffset> uncompressedLocals;
-	};
-
-	class HostFunction : public Function {
-
 	};
 
 	class FunctionTable {
@@ -194,10 +195,12 @@ namespace WASM {
 
 	class ModuleLinker {
 	public:
+		ModuleLinker(std::span<Module> ms) : modules{ ms } {}
+
 		void link();
 
 	private:
-
+		std::span<Module> modules;
 	};
 
 	class ModuleCompiler {
@@ -290,7 +293,7 @@ namespace WASM {
 
 		Buffer printedBytecode;
 
-		u32 stackHeightInBytes;
+		u32 stackHeightInBytes{ 0 };
 		std::vector<ValueRecord> valueStack;
 		std::vector<ControlFrame> controlStack;
 		std::vector<ValueRecord> cachedReturnList;

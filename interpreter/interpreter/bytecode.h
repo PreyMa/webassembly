@@ -19,6 +19,7 @@ namespace WASM {
 			ReturnMany,
 			Call,
 			CallIndirect,
+			CallHost,
 			Entry,
 			I32Drop,
 			I64Drop,

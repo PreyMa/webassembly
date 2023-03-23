@@ -156,6 +156,7 @@ const char* Bytecode::name() const {
 		case ReturnMany: return "ReturnMany";
 		case Call: return "Call";
 		case CallIndirect: return "CallIndirect";
+		case CallHost: return "CallHost";
 		case Entry: return "Entry";
 		case I32Drop: return "I32Drop";
 		case I64Drop: return "I64Drop";
@@ -372,6 +373,7 @@ BytecodeArguments WASM::Bytecode::arguments() const
 	case ReturnMany: return BA::SingleU32;
 	case Call: return BA::SingleU64SingleU32;
 	case CallIndirect: return BA::DualU32;
+	case CallHost: return BA::SingleU64;
 	case Entry: return BA::SingleU64SingleU32;
 	case I32Drop:
 	case I64Drop:

@@ -72,6 +72,18 @@ namespace WASM {
 		bool isValid() const;
 		const char* name() const;
 		u32 sizeInBytes() const;
+
+		template<typename T>
+		static ValType fromType() {
+			static_assert(sizeof(T) == 0, "Unsupported val type");
+		}
+
+		template<> static ValType fromType<u32>() { return ValType::I32; }
+		template<> static ValType fromType<i32>() { return ValType::I32; }
+		template<> static ValType fromType<u64>() { return ValType::I64; }
+		template<> static ValType fromType<i64>() { return ValType::I64; }
+		template<> static ValType fromType<f32>() { return ValType::F32; }
+		template<> static ValType fromType<f64>() { return ValType::F64; }
 	};
 
 	class ExportType : public Enum<ExportType> {

@@ -44,13 +44,15 @@ namespace WASM {
 
 	class Function;
 	class BytecodeFunction;
-	class HostFunction;
 	class FunctionTable;
 	class DecodedElement;
 	class Memory;
 	class GlobalBase;
 	template<typename> class Global;
 	class Module;
+
+	class HostFunctionBase;
+	template<typename> class HostFunction;
 
 	struct Imported;
 	struct FunctionImport;

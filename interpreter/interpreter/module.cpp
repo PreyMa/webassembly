@@ -319,17 +319,33 @@ Nullable<const std::string> WASM::Module::functionNameByIndex(u32 functionIdx) c
 	return fnd->second;
 }
 
-/*void ModuleLinker::link()
+void ModuleLinker::link()
 {
-	if (!module.needsLinking()) {
-		throwCompilationError("Module already linked");
-	}
+	//if (!module.needsLinking()) {
+//		throwCompilationError("Module already linked");
+//	}
 
 	// TODO: Linking
-	// for (auto& func : module.unlinkedImports->importedFunctions) {
+	// for (auto& func : module.compilationData->importedFunctions) {
 		// func.
 	// }
-}*/
+
+	// TODO: Do linking here
+
+	// TODO: Init globals here
+
+	// FIXME: This is some hard coded linking just for testing
+	assert(modules.size() == 1);
+	assert(modules[0].compilationData);
+	assert(modules[0].compilationData->importedFunctions.size() == 1);
+
+	static HostFunction abortFunction = [&](u32, u32, u32, u32) { std::cout << "Abort called"; };
+	std::cout << "Registered function: ";
+	abortFunction.print(std::cout);
+	std::cout << std::endl;
+
+	modules[0].compilationData->importedFunctions[0].resolvedFunction = abortFunction;
+}
 
 
 
@@ -1195,15 +1211,26 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 		auto functionIdx = instruction.functionIndex();
 		auto function = module.functionByIndex(functionIdx);
 		assert(function.has_value());
-		auto bytecodeFunction = function->asBytecodeFunction();
-		assert(bytecodeFunction.has_value());
-		auto& funcType = bytecodeFunction->functionType();
+		auto& funcType = function->functionType();
 		popValues(funcType.parameters());
 		pushValues(funcType.results());
+		
+		auto bytecodeFunction = function->asBytecodeFunction();
+		if (bytecodeFunction.has_value()) {
+			// FIXME: Print the pointer to the actual bytecode instead?
+			print(Bytecode::Call);
+			printPointer(bytecodeFunction.pointer());
+			printU32(funcType.parameterStackSectionSizeInBytes());
 
-		print(Bytecode::Call);
-		printPointer(bytecodeFunction.pointer());
-		printU32(funcType.parameterStackSectionSizeInBytes());
+		}
+		else {
+			auto hostFunction = function->asHostFunction();
+			assert(hostFunction.has_value());
+
+			print(Bytecode::CallHost);
+			printPointer(hostFunction.pointer());
+		}
+		
 		return;
 	}
 
