@@ -31,6 +31,7 @@ namespace WASM {
 
 		i32 constantI32() const;
 		std::optional<u32> constantFuncRefAsIndex() const;
+		u64 constantUntypedValue() const;
 
 	private:
 		BufferSlice mBytes;
@@ -121,14 +122,19 @@ namespace WASM {
 		DeclaredGlobal(GlobalType t, Expression c)
 			: mType{ t }, mInitExpression{ std::move(c) } {}
 
+		const GlobalType& type() const { return mType; }
 		const ValType valType() const { return mType.valType(); }
 		const Expression& initExpression() const { return mInitExpression; }
+
+		void setIndexInTypedStorageArray(u32 idx);
+		std::optional<u32> indexInTypedStorageArray() const { return mIndexInTypedStorageArray; }
 
 		void print(std::ostream& out) const;
 
 	private:
 		GlobalType mType;
 		Expression mInitExpression;
+		std::optional<u32> mIndexInTypedStorageArray;
 	};
 
 	struct ExportItem {
@@ -236,6 +242,9 @@ namespace WASM {
 			: Imported{ std::move(m), std::move(n) }, globalType{ tp }, resolvedGlobal32{} {}
 
 		GlobalType globalType;
+
+		Nullable<const GlobalBase> getBase() const;
+
 	private:
 		union {
 			Nullable<Global<u32>> resolvedGlobal32;

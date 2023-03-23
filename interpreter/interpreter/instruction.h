@@ -290,6 +290,7 @@ namespace WASM {
 		BlockTypeIndex blockTypeIndex() const;
 		u32 branchLabel() const;
 		u32 localIndex() const;
+		u32 globalIndex() const;
 		u32 functionIndex() const;
 		u32 memoryOffset() const;
 

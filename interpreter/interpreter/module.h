@@ -102,8 +102,10 @@ namespace WASM {
 		std::vector<u8> data;
 	};
 
+	class GlobalBase {};
+
 	template<typename T>
-	class Global {
+	class Global : public GlobalBase {
 	public:
 		Global() = default;
 
@@ -121,6 +123,11 @@ namespace WASM {
 
 	class Module {
 	public:
+		struct ResolvedGlobal {
+			const GlobalBase& instance;
+			const GlobalType& type;
+		};
+
 		Module(
 			Buffer b,
 			std::string p,
@@ -130,6 +137,9 @@ namespace WASM {
 			std::vector<FunctionTable> ts,
 			std::vector<Memory> ms,
 			ExportTable ex,
+			std::vector<DeclaredGlobal> gt,
+			std::vector<Global<u32>> g64,
+			std::vector<Global<u64>> g32,
 			std::vector<FunctionImport> imFs,
 			std::vector<TableImport> imTs,
 			std::vector<MemoryImport> imMs,
@@ -139,9 +149,10 @@ namespace WASM {
 		Module(Module&& m) = default;
 
 		const std::string& name() const { return mName; }
-		bool needsLinking() const { return unlinkedImports.has_value(); }
+		bool needsLinking() const { return compilationData != nullptr; }
 
 		Nullable<Function> functionByIndex(u32);
+		std::optional<ResolvedGlobal> globalByIndex(u32);
 
 		std::optional<ExportItem> exportByName(const std::string&, ExportType) const;
 		Nullable<Function> exportedFunctionByName(const std::string&);
@@ -149,12 +160,14 @@ namespace WASM {
 
 	private:
 		friend class ModuleCompiler;
+		friend class ModuleLinker;
 
-		struct UnlinkedImports {
+		struct CompilationData {
 			std::vector<FunctionImport> importedFunctions;
 			std::vector<TableImport> importedTables;
 			std::vector<MemoryImport> importedMemories;
 			std::vector<GlobalImport> importedGlobals;
+			std::vector<DeclaredGlobal> globalTypes;
 		};
 
 		std::string path;
@@ -168,7 +181,7 @@ namespace WASM {
 		std::vector<Global<u32>> globals32;
 		std::vector<Global<u64>> globals64;
 
-		std::optional<UnlinkedImports> unlinkedImports;
+		std::unique_ptr<CompilationData> compilationData;
 		ExportTable exports;
 
 		u32 numImportedFunctions;
@@ -262,6 +275,7 @@ namespace WASM {
 		void resetCachedReturnList(u32);
 
 		BytecodeFunction::LocalOffset localByIndex(u32) const;
+		Module::ResolvedGlobal globalByIndex(u32) const;
 		const FunctionType& blockTypeByIndex(u32);
 		u32 measureMaxPrintedBlockLength(u32, u32, bool= false) const;
 		void requestAddressPatch(u32, bool, bool= false);

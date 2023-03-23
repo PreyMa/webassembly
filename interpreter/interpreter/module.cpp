@@ -195,6 +195,9 @@ Module::Module(
 	std::vector<FunctionTable> ts,
 	std::vector<Memory> ms,
 	ExportTable ex,
+	std::vector<DeclaredGlobal> gt,
+	std::vector<Global<u32>> g32,
+	std::vector<Global<u64>> g64,
 	std::vector<FunctionImport> imFs,
 	std::vector<TableImport> imTs,
 	std::vector<MemoryImport> imMs,
@@ -207,30 +210,34 @@ Module::Module(
 	functionTypes{ std::move(ft) },
 	functions{ std::move(fs) },
 	functionTables{ std::move(ts) },
+	globals32{ std::move(g32) },
+	globals64{ std::move(g64) },
 	memories{ std::move(ms) },
-	unlinkedImports{
-		{
+	compilationData{
+		std::make_unique<Module::CompilationData>(
 			std::move(imFs),
 			std::move(imTs),
 			std::move(imMs),
-			std::move(imGs)
-		}
+			std::move(imGs),
+			std::move(gt)
+		)
 	},
 	exports{ std::move(ex) },
 	functionNameMap{ std::move(fns) }
 {
-	numImportedFunctions = unlinkedImports->importedFunctions.size();
-	numImportedTables = unlinkedImports->importedTables.size();
-	numImportedMemories = unlinkedImports->importedMemories.size();
-	numImportedGlobals = unlinkedImports->importedGlobals.size();
+	assert(compilationData);
+	numImportedFunctions = compilationData->importedFunctions.size();
+	numImportedTables = compilationData->importedTables.size();
+	numImportedMemories = compilationData->importedMemories.size();
+	numImportedGlobals = compilationData->importedGlobals.size();
 }
 
 
-Nullable<Function> WASM::Module::functionByIndex(u32 idx)
+Nullable<Function> Module::functionByIndex(u32 idx)
 {
 	if (idx < numImportedFunctions) {
-		if (unlinkedImports.has_value()) {
-			return unlinkedImports->importedFunctions[idx].resolvedFunction;
+		if (compilationData) {
+			return compilationData->importedFunctions[idx].resolvedFunction;
 		}
 
 		return {};
@@ -239,6 +246,42 @@ Nullable<Function> WASM::Module::functionByIndex(u32 idx)
 	idx -= numImportedFunctions;
 	assert(idx < functions.size());
 	return functions[idx];
+}
+
+std::optional<Module::ResolvedGlobal> Module::globalByIndex(u32 idx)
+{
+	if (!compilationData) {
+		return {};
+	}
+
+	if (idx < numImportedGlobals) {
+		auto& importedGlobal = compilationData->importedGlobals[idx];
+		auto baseGlobal = importedGlobal.getBase();
+		if (!baseGlobal.has_value()) {
+			return {};
+		}
+
+		return ResolvedGlobal{
+			*baseGlobal,
+			importedGlobal.globalType
+		};
+	}
+
+	idx -= numImportedGlobals;
+	assert(idx < compilationData->globalTypes.size());
+	auto& declaredGlobal = compilationData->globalTypes[idx];
+
+	assert(declaredGlobal.indexInTypedStorageArray().has_value());
+	u32 storageIndex = *declaredGlobal.indexInTypedStorageArray();
+
+	auto& globalType = declaredGlobal.type();
+	if (globalType.valType().sizeInBytes() == 4) {
+		assert(storageIndex < globals32.size());
+		return ResolvedGlobal{ globals32[storageIndex], globalType };
+	}
+
+	assert(storageIndex < globals64.size());
+	return ResolvedGlobal{ globals64[storageIndex], globalType };
 }
 
 std::optional<ExportItem> WASM::Module::exportByName(const std::string& name, ExportType type) const
@@ -334,6 +377,9 @@ void ModuleCompiler::compile()
 	for (auto& function : module.functions) {
 		compileFunction(function);
 	}
+
+	// Clear the imports
+	module.compilationData.reset();
 }
 
 void ModuleCompiler::setFunctionContext(const BytecodeFunction& function)
@@ -447,6 +493,16 @@ BytecodeFunction::LocalOffset ModuleCompiler::localByIndex(u32 idx) const
 	}
 
 	throwCompilationError("Local index out of bounds");
+}
+
+Module::ResolvedGlobal WASM::ModuleCompiler::globalByIndex(u32 idx) const
+{
+	auto global = module.globalByIndex(idx);
+	if (global.has_value()) {
+		return *global;
+	}
+
+	throwCompilationError("Global index out of bounds");
 }
 
 const FunctionType& WASM::ModuleCompiler::blockTypeByIndex(u32 idx)
@@ -953,7 +1009,9 @@ void ModuleCompiler::compileMemoryInstruction(Instruction instruction)
 void ModuleCompiler::compileInstruction(Instruction instruction, u32 instructionCounter)
 {
 	auto opCode = instruction.opCode();
-	if (opCode.isConstant() && opCode != InstructionType::GlobalGet) {
+	if (opCode.isConstant()
+		&& opCode != InstructionType::GlobalGet
+		) {
 		compileNumericConstantInstruction(instruction);
 		return;
 	}
@@ -1030,6 +1088,17 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 		else {
 			print(longJump);
 			printU32(distance);
+		}
+	};
+
+	auto printGlobalTypeInstruction = [&](Module::ResolvedGlobal global, Bytecode cmd32, Bytecode cmd64) {
+		if (isReachable()) {
+			u32 numBytes = global.type.valType().sizeInBytes();
+			if (numBytes != 4 && numBytes != 8) {
+				throwCompilationError("Only globals with 32bit and 64bit are supported");
+			}
+			print(numBytes == 4 ? cmd32 : cmd64);
+			printPointer(&global.instance);
 		}
 	};
 
@@ -1177,6 +1246,25 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 			Bytecode::I64LocalSetNear,
 			Bytecode::I64LocalSetFar
 		);
+		return;
+	}
+
+	case IT::GlobalGet: {
+		auto global = globalByIndex(instruction.globalIndex());
+		pushValue(global.type.valType());
+
+		printGlobalTypeInstruction(global, Bytecode::I32GlobalGet, Bytecode::I64GlobalGet);
+		return;
+	}
+
+	case IT::GlobalSet: {
+		auto global = globalByIndex(instruction.globalIndex());
+		if (!global.type.isMutable()) {
+			throwCompilationError("Cannot write to immutable global");
+		}
+		popValue(global.type.valType());
+
+		printGlobalTypeInstruction(global, Bytecode::I32GlobalSet, Bytecode::I64GlobalSet);
 		return;
 	}
 

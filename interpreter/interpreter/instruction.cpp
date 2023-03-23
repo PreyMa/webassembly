@@ -1775,6 +1775,12 @@ u32 Instruction::localIndex() const {
 	return operandA;
 }
 
+u32 WASM::Instruction::globalIndex() const
+{
+	assert(type == InstructionType::GlobalGet || type == InstructionType::GlobalSet);
+	return operandA;
+}
+
 u32 Instruction::functionIndex() const {
 	assert(type == InstructionType::Call);
 	return operandA;

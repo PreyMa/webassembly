@@ -66,6 +66,29 @@ Module ModuleParser::toModule()
 		memories.emplace_back(i + importedMemoryTypes.size(), memoryTypes[i].limits());
 	}
 
+	u32 num32BitGlobals= 0;
+	u32 num64BitGlobals= 0;
+	for (auto& global : globals) {
+		auto size = global.valType().sizeInBytes();
+		if (size == 4) {
+			global.setIndexInTypedStorageArray(num32BitGlobals++);
+		}
+		else if (size == 8) {
+			global.setIndexInTypedStorageArray(num64BitGlobals++);
+		}
+		else {
+			throw ValidationError{ path, "Only globals with 32bits and 64bits are supported" };
+		}
+	}
+
+	std::vector<Global<u32>> globals32bit;
+	globals32bit.reserve(num32BitGlobals);
+	globals32bit.insert(globals32bit.end(), num32BitGlobals, {});
+
+	std::vector<Global<u64>> globals64bit;
+	globals64bit.reserve(num64BitGlobals);
+	globals64bit.insert(globals64bit.end(), num64BitGlobals, {});
+
 	ExportTable exportTable;
 	exportTable.reserve(exports.size());
 
@@ -87,6 +110,9 @@ Module ModuleParser::toModule()
 		std::move(functionTables),
 		std::move(memories),
 		std::move(exportTable),
+		std::move(globals),
+		std::move(globals32bit),
+		std::move(globals64bit),
 		// Imports
 		std::move(importedFunctions),
 		std::move(importedTableTypes),
@@ -816,6 +842,12 @@ void TableType::print(std::ostream& out) const
 	mLimits.print(out);
 }
 
+void DeclaredGlobal::setIndexInTypedStorageArray(u32 idx)
+{
+	assert(!mIndexInTypedStorageArray.has_value());
+	mIndexInTypedStorageArray = idx;
+}
+
 void DeclaredGlobal::print(std::ostream& out) const
 {
 	out << "DeclaredGlobal: " << (mType.isMutable() ? "mutable " : "const ") << mType.valType().name() << " ";
@@ -929,16 +961,23 @@ void Expression::print(std::ostream& out) const
 	}
 }
 
-i32 WASM::Expression::constantI32() const
+i32 Expression::constantI32() const
 {
 	assert(mInstructions.size() > 0);
 	return mInstructions.front().asI32Constant();
 }
 
-std::optional<u32> WASM::Expression::constantFuncRefAsIndex() const
+std::optional<u32> Expression::constantFuncRefAsIndex() const
 {
 	assert(mInstructions.size() > 0);
 	return mInstructions.front().asReferenceIndex();
+}
+
+u64 Expression::constantUntypedValue() const
+{
+	assert(mInstructions.size() > 0);
+	assert(false);
+	return 0;
 }
 
 void ModuleValidator::validate(const ParsingState& parser)
@@ -1156,8 +1195,9 @@ void ModuleValidator::validateConstantExpression(const Expression& exp, ValType 
 	}
 
 	if (ins == InstructionType::GlobalGet) {
-		// TODO: Constant GlobalGet is only allowed for imported globals, which do not exist yet
-		assert(false);
+		if (ins.globalIndex() >= s().importedGlobalTypes.size()) {
+			throwValidationError("Init expression references invalid global index");
+		}
 	}
 
 	std::cout << "Validated global" << std::endl;
@@ -1190,4 +1230,15 @@ void ParsingState::clear()
 	mName.clear();
 	functionNames.clear();
 	functionLocalNames.clear();
+}
+
+Nullable<const GlobalBase> WASM::GlobalImport::getBase() const
+{
+	if (globalType.valType().sizeInBytes() == 4) {
+		auto& ptr= *resolvedGlobal32;
+		return ptr;
+	}
+
+	auto& ptr = *resolvedGlobal64;
+	return ptr;
 }

@@ -48,6 +48,7 @@ namespace WASM {
 	class FunctionTable;
 	class DecodedElement;
 	class Memory;
+	class GlobalBase;
 	template<typename> class Global;
 	class Module;
 
