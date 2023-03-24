@@ -443,6 +443,17 @@ void ModuleCompiler::pushValue(ValType type)
 	stackHeightInBytes += type.sizeInBytes();
 }
 
+void WASM::ModuleCompiler::pushMaybeValue(ValueRecord record)
+{
+	if (record.has_value()) {
+		pushValue(*record);
+	}
+	else {
+		valueStack.emplace_back(record);
+		assert(!isReachable());
+	}
+}
+
 void ModuleCompiler::pushValues(const std::vector<ValType>& types)
 {
 	valueStack.reserve(valueStack.size() + types.size());
@@ -1132,6 +1143,21 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 		}
 	};
 
+	auto printSelectInstructionIfReachable = [&](ValueRecord firstType, ValueRecord secondType) {
+		if (isReachable()) {
+			assert(firstType.has_value());
+			assert(secondType.has_value());
+			assert(*firstType == *secondType);
+
+			if (firstType->sizeInBytes() == 4) {
+				print(Bytecode::I32Select);
+			}
+			else {
+				print(Bytecode::I64Select);
+			}
+		}
+	};
+
 
 	using IT = InstructionType;
 	switch (opCode) {
@@ -1265,6 +1291,51 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 				throwCompilationError("Drop instruction only implemented for 32bit and 64bit");
 			}
 		}
+		return;
+	}
+
+	case IT::Select: {
+		popValue(ValType::I32);
+		auto firstType= popValue();
+		auto secondType= popValue();
+
+		auto isNum = [](ValueRecord record) {
+			// Empty is also a number, so just use I32 as a placeholder
+			return record.value_or(ValType::I32).isNumber();
+		};
+
+		auto isVec = [](ValueRecord record) {
+			// Empty is also a number, so just use I32 as a placeholder
+			return record.value_or(ValType::V128).isVector();
+		};
+
+		if (!((isNum(firstType) && isNum(secondType)) || (isVec(firstType) && isVec(secondType)))) {
+			throwCompilationError("Select instruction expected either two numbers or two vectors to select from");
+		}
+
+		if (firstType.has_value() && secondType.has_value() && *firstType != *secondType) {
+			throwCompilationError("Select instruction expected identical types to select from");
+		}
+
+		pushMaybeValue(firstType.has_value() ? firstType : secondType);
+
+		printSelectInstructionIfReachable(firstType, secondType);
+		return;
+	}
+
+	case IT::SelectFrom: {
+		auto typeVector = instruction.selectTypeVector(currentFunction->expression().bytes());
+		if (typeVector.size() != 1) {
+			throwCompilationError("Expected a type vector of size one for SelectFrom instruction");
+		}
+		auto type = ValType::fromInt(typeVector[0]);
+
+		popValue(ValType::I32);
+		popValue(type);
+		popValue(type);
+		pushValue(type);
+
+		printSelectInstructionIfReachable(type, type);
 		return;
 	}
 

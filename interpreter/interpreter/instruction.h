@@ -299,6 +299,8 @@ namespace WASM {
 		u64 asIF64Constant() const;
 		std::optional<u32> asReferenceIndex() const;
 
+		std::span<const u8> selectTypeVector(const BufferSlice&) const;
+
 		std::optional<Bytecode> toBytecode() const;
 		u32 maxPrintedByteLength(const BufferSlice&) const;
 

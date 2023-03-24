@@ -251,6 +251,7 @@ namespace WASM {
 		// Based on the expression validation algorithm
 		void setFunctionContext(const BytecodeFunction&);
 		void pushValue(ValType);
+		void pushMaybeValue(ValueRecord);
 		ValueRecord popValue();
 		ValueRecord popValue(ValueRecord);
 		void pushValues(const std::vector<ValType>&);

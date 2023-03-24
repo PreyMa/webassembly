@@ -797,11 +797,10 @@ void Instruction::printSelectVectorInstruction(std::ostream& out, const BufferSl
 	// FIXME: If buffer iterator was read only this ugly const cast could go away
 	assert(type == InstructionType::SelectFrom);
 	out << type.name() << " [";
-	auto it = const_cast<BufferSlice&>(data).iterator();
-	it.moveTo(vectorPointer);
-	auto numTypes = it.nextU32();
-	for (u32 i = 0; i != numTypes; i++) {
-		out << " " << ValType::fromInt(it.nextU8()).name();
+
+	auto types = selectTypeVector(data);
+	for (auto typeNum : types) {
+		out << " " << ValType::fromInt(typeNum).name();
 	}
 
 	out << " ]";
@@ -1818,6 +1817,15 @@ std::optional<u32> Instruction::asReferenceIndex() const
 	}
 
 	return {};
+}
+
+std::span<const u8> WASM::Instruction::selectTypeVector(const BufferSlice& data) const
+{
+	assert(type == InstructionType::SelectFrom);
+	auto it = const_cast<BufferSlice&>(data).iterator();
+	it.moveTo(vectorPointer);
+	auto numTypes = it.nextU32();
+	return { it.positionPointer(), numTypes };
 }
 
 std::optional<Bytecode> Instruction::toBytecode() const
