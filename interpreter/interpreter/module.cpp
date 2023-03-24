@@ -1151,7 +1151,7 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 	auto printForwardJump = [&](Bytecode shortJump, Bytecode longJump, u32 label, bool isIf) {
 		if (isReachable()) {
 			// Consider the bytecode not yet printed -> +1
-			auto distance = 1+ measureMaxPrintedBlockLength(instructionCounter, 0, isIf);
+			auto distance = 1+ measureMaxPrintedBlockLength(instructionCounter, label, isIf);
 			if (isShortDistance(distance)) {
 				print(shortJump);
 				requestAddressPatch(label, true, isIf);
