@@ -1376,7 +1376,7 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 		};
 
 		auto isVec = [](ValueRecord record) {
-			// Empty is also a number, so just use I32 as a placeholder
+			// Empty is also a vector, so just use V128 as a placeholder
 			return record.value_or(ValType::V128).isVector();
 		};
 
