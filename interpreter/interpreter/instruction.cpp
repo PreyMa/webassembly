@@ -1791,6 +1791,12 @@ u32 WASM::Instruction::memoryOffset() const
 	return operandB;
 }
 
+u32 WASM::Instruction::dataSegmentIndex() const
+{
+	assert(type == InstructionType::MemoryInit || type == InstructionType::DataDrop);
+	return operandA;
+}
+
 i32 Instruction::asI32Constant() const
 {
 	assert(type == InstructionType::I32Const);

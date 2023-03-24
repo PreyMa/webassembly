@@ -59,11 +59,9 @@ Module ModuleParser::toModule()
 		// decodedElements.back().initTableIfActive( functionTables );
 	}
 
-	std::vector<Memory> memories;
-	memories.reserve(memoryTypes.size());
-
-	for (u32 i = 0; i != memoryTypes.size(); i++) {
-		memories.emplace_back(i + importedMemoryTypes.size(), memoryTypes[i].limits());
+	std::optional<Memory> memoryInstance;
+	if (!memoryTypes.empty()) {
+		memoryInstance.emplace(0, memoryTypes[0].limits());
 	}
 
 	u32 num32BitGlobals= 0;
@@ -96,6 +94,11 @@ Module ModuleParser::toModule()
 		exportTable.emplace( exp.moveName(), exp.toItem());
 	}
 
+	std::optional<MemoryImport> memoryImport;
+	if (!importedMemoryTypes.empty()) {
+		memoryImport.emplace(std::move(importedMemoryTypes[0]));
+	}
+
 	// FIXME: Just use the path as name for now
 	if (mName.empty()) {
 		mName = path;
@@ -108,7 +111,7 @@ Module ModuleParser::toModule()
 		std::move(functionTypes),
 		std::move(bytecodeFunctions),
 		std::move(functionTables),
-		std::move(memories),
+		std::move(memoryInstance),
 		std::move(exportTable),
 		std::move(globals),
 		std::move(globals32bit),
@@ -116,7 +119,7 @@ Module ModuleParser::toModule()
 		// Imports
 		std::move(importedFunctions),
 		std::move(importedTableTypes),
-		std::move(importedMemoryTypes),
+		std::move(memoryImport),
 		std::move(importedGlobalTypes),
 		std::move(functionNames)
 	};
@@ -993,6 +996,10 @@ void ModuleValidator::validate(const ParsingState& parser)
 
 	if (s().functions.size() != s().functionCodes.size()) {
 		throwValidationError("Parsed different number of function declarations than function codes");
+	}
+
+	if (s().memoryTypes.size() + s().importedMemoryTypes.size() > 1) {
+		throwValidationError("Cannot define or import more than one memory");
 	}
 
 	for (u32 i = 0; i != s().functions.size(); i++) {

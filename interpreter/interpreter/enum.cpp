@@ -436,11 +436,12 @@ BytecodeArguments WASM::Bytecode::arguments() const
 		return BA::SingleU32;
 	case MemorySize:
 	case MemoryGrow:
-	case DataDrop:
 	case MemoryFill:
 	case MemoryCopy:
 		return BA::None;
-	case MemoryInit: return BA::DualU64;
+	case DataDrop:
+	case MemoryInit:
+		return BA::SingleU32;
 	case I32Const: return BA::SingleU32;
 	case I64Const: return BA::SingleU64;
 	case F32Const: return BA::SingleU32;

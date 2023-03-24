@@ -136,14 +136,14 @@ namespace WASM {
 			std::vector<FunctionType> ft,
 			std::vector<BytecodeFunction> fs,
 			std::vector<FunctionTable> ts,
-			std::vector<Memory> ms,
+			std::optional<Memory> ms,
 			ExportTable ex,
 			std::vector<DeclaredGlobal> gt,
 			std::vector<Global<u32>> g64,
 			std::vector<Global<u64>> g32,
 			std::vector<FunctionImport> imFs,
 			std::vector<TableImport> imTs,
-			std::vector<MemoryImport> imMs,
+			std::optional<MemoryImport> imMs,
 			std::vector<GlobalImport> imGs,
 			ParsingState::NameMap fns
 		);
@@ -154,6 +154,7 @@ namespace WASM {
 
 		Nullable<Function> functionByIndex(u32);
 		std::optional<ResolvedGlobal> globalByIndex(u32);
+		Nullable<Memory> memoryByIndex(u32);
 
 		std::optional<ExportItem> exportByName(const std::string&, ExportType) const;
 		Nullable<Function> exportedFunctionByName(const std::string&);
@@ -166,7 +167,7 @@ namespace WASM {
 		struct CompilationData {
 			std::vector<FunctionImport> importedFunctions;
 			std::vector<TableImport> importedTables;
-			std::vector<MemoryImport> importedMemories;
+			std::optional<MemoryImport> importedMemory;
 			std::vector<GlobalImport> importedGlobals;
 			std::vector<DeclaredGlobal> globalTypes;
 		};
@@ -178,7 +179,7 @@ namespace WASM {
 		std::vector<FunctionType> functionTypes;
 		std::vector<BytecodeFunction> functions;
 		std::vector<FunctionTable> functionTables;
-		std::vector<Memory> memories;
+		std::optional<Memory> ownedMemoryInstance;
 		std::vector<Global<u32>> globals32;
 		std::vector<Global<u64>> globals64;
 
@@ -274,13 +275,15 @@ namespace WASM {
 		void compileNumericConstantInstruction(Instruction);
 		void compileNumericUnaryInstruction(Instruction);
 		void compileNumericBinaryInstruction(Instruction);
-		void compileMemoryInstruction(Instruction);
+		void compileMemoryDataInstruction(Instruction);
+		void compileMemoryControlInstruction(Instruction);
 		void compileInstruction(Instruction, u32);
 		void resetCachedReturnList(u32);
 
 		BytecodeFunction::LocalOffset localByIndex(u32) const;
 		Module::ResolvedGlobal globalByIndex(u32) const;
 		const FunctionType& blockTypeByIndex(u32);
+		const Memory& memoryByIndex(u32);
 		u32 measureMaxPrintedBlockLength(u32, u32, bool= false) const;
 		void requestAddressPatch(u32, bool, bool= false);
 		void patchAddress(const AddressPatchRequest&);

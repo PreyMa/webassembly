@@ -193,14 +193,14 @@ Module::Module(
 	std::vector<FunctionType> ft,
 	std::vector<BytecodeFunction> fs,
 	std::vector<FunctionTable> ts,
-	std::vector<Memory> ms,
+	std::optional<Memory> ms,
 	ExportTable ex,
 	std::vector<DeclaredGlobal> gt,
 	std::vector<Global<u32>> g32,
 	std::vector<Global<u64>> g64,
 	std::vector<FunctionImport> imFs,
 	std::vector<TableImport> imTs,
-	std::vector<MemoryImport> imMs,
+	std::optional<MemoryImport> imMs,
 	std::vector<GlobalImport> imGs,
 	ParsingState::NameMap fns
 )
@@ -212,7 +212,7 @@ Module::Module(
 	functionTables{ std::move(ts) },
 	globals32{ std::move(g32) },
 	globals64{ std::move(g64) },
-	memories{ std::move(ms) },
+	ownedMemoryInstance{ std::move(ms) },
 	compilationData{
 		std::make_unique<Module::CompilationData>(
 			std::move(imFs),
@@ -228,7 +228,7 @@ Module::Module(
 	assert(compilationData);
 	numImportedFunctions = compilationData->importedFunctions.size();
 	numImportedTables = compilationData->importedTables.size();
-	numImportedMemories = compilationData->importedMemories.size();
+	numImportedMemories = compilationData->importedMemory.has_value() ? 1 : 0;
 	numImportedGlobals = compilationData->importedGlobals.size();
 }
 
@@ -282,6 +282,25 @@ std::optional<Module::ResolvedGlobal> Module::globalByIndex(u32 idx)
 
 	assert(storageIndex < globals64.size());
 	return ResolvedGlobal{ globals64[storageIndex], globalType };
+}
+
+Nullable<Memory> WASM::Module::memoryByIndex(u32 idx)
+{
+	if (idx != 0) {
+		return {};
+	}
+
+	if (numImportedMemories) {
+		if (compilationData) {
+			assert(compilationData->importedMemory.has_value());
+			return compilationData->importedMemory->resolvedMemory;
+		}
+
+		return {};
+	}
+
+	assert(ownedMemoryInstance.has_value());
+	return *ownedMemoryInstance;
 }
 
 std::optional<ExportItem> WASM::Module::exportByName(const std::string& name, ExportType type) const
@@ -538,6 +557,16 @@ const FunctionType& WASM::ModuleCompiler::blockTypeByIndex(u32 idx)
 		throwCompilationError("Block type index references invalid function type");
 	}
 	return module.functionTypes[idx];
+}
+
+const Memory& ModuleCompiler::memoryByIndex(u32 idx)
+{
+	auto memory= module.memoryByIndex(idx);
+	if (memory.has_value()) {
+		return *memory;
+	}
+
+	throwCompilationError("Memory index out of bounds");
 }
 
 u32 WASM::ModuleCompiler::measureMaxPrintedBlockLength(u32 startInstruction, u32 labelIdx, bool runToElse) const
@@ -973,7 +1002,7 @@ void ModuleCompiler::compileNumericBinaryInstruction(Instruction instruction) {
 	printBytecodeExpectingNoArgumentsIfReachable(instruction);
 }
 
-void ModuleCompiler::compileMemoryInstruction(Instruction instruction)
+void ModuleCompiler::compileMemoryDataInstruction(Instruction instruction)
 {
 	auto opCode = instruction.opCode();
 	auto operandType = opCode.operandType();
@@ -1033,11 +1062,53 @@ void ModuleCompiler::compileMemoryInstruction(Instruction instruction)
 	}
 }
 
+void WASM::ModuleCompiler::compileMemoryControlInstruction(Instruction instruction)
+{
+	if (instruction != InstructionType::DataDrop) {
+		// Check that the memory at least exists
+		memoryByIndex(0);
+	}
+
+	switch (instruction.opCode()) {
+	case InstructionType::MemorySize: // No popping -> Push once
+		pushValue(ValType::I32);
+		break;
+	case InstructionType::MemoryGrow: // Pop once -> Push once
+		popValue(ValType::I32);
+		pushValue(ValType::I32);
+		break;
+	case InstructionType::MemoryFill: // pop thrice
+	case InstructionType::MemoryCopy:
+	case InstructionType::MemoryInit:
+		popValue(ValType::I32);
+		popValue(ValType::I32);
+		popValue(ValType::I32);
+		break;
+	}
+
+	// Nullable<Data> data;
+	if (instruction == InstructionType::MemoryInit || instruction == InstructionType::DataDrop) {
+		// FIXME: Check if the data segment actually exists
+		assert(false);
+	}
+
+	if (isReachable()) {
+		auto bytecode = instruction.toBytecode();
+		assert(bytecode.has_value());
+		print(*bytecode);
+
+		if (instruction == InstructionType::MemoryInit || instruction == InstructionType::DataDrop) {
+			printU32(instruction.dataSegmentIndex());
+		}
+	}
+}
+
 void ModuleCompiler::compileInstruction(Instruction instruction, u32 instructionCounter)
 {
 	auto opCode = instruction.opCode();
 	if (opCode.isConstant()
 		&& opCode != InstructionType::GlobalGet
+		&& opCode != InstructionType::ReferenceFunction
 		) {
 		compileNumericConstantInstruction(instruction);
 		return;
@@ -1054,7 +1125,7 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 	}
 
 	if (opCode.isMemory()) {
-		compileMemoryInstruction(instruction);
+		compileMemoryDataInstruction(instruction);
 		return;
 	}
 
@@ -1398,6 +1469,14 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 		return;
 	}
 
+	case IT::MemorySize:
+	case IT::MemoryGrow:
+	case IT::MemoryFill:
+	case IT::MemoryCopy:
+	case IT::MemoryInit:
+	case IT::DataDrop:
+		compileMemoryControlInstruction(instruction);
+		return;
 	}
 
 	std::cerr << "Compilation not implemented for instruction '" << opCode.name() << "'!" << std::endl;

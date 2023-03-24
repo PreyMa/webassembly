@@ -293,6 +293,7 @@ namespace WASM {
 		u32 globalIndex() const;
 		u32 functionIndex() const;
 		u32 memoryOffset() const;
+		u32 dataSegmentIndex() const;
 
 		i32 asI32Constant() const;
 		u32 asIF32Constant() const;
