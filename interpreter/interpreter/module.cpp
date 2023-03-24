@@ -1294,6 +1294,20 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 		return;
 	}
 
+	case IT::LocalTee: {
+		auto local = localByIndex(instruction.localIndex());
+		popValue(local.type);
+		pushValue(local.type);
+		printLocalGetSetTeeBytecodeIfReachable(
+			local,
+			Bytecode::I32LocalTeeNear,
+			Bytecode::I32LocalTeeFar,
+			Bytecode::I64LocalTeeNear,
+			Bytecode::I64LocalTeeFar
+		);
+		return;
+	}
+
 	case IT::GlobalGet: {
 		auto global = globalByIndex(instruction.globalIndex());
 		pushValue(global.type.valType());
@@ -1339,7 +1353,7 @@ void WASM::ModuleCompiler::printBytecode(std::ostream& out)
 			}
 		}
 
-		u32 lastU32;
+		u32 lastU32= 0;
 		if (args.isU32()) {
 			for (u32 i = 0; i != args.count(); i++) {
 				lastU32 = it.nextLittleEndianU32();
