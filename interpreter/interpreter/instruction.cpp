@@ -2079,6 +2079,25 @@ u32 WASM::Instruction::maxPrintedByteLength(const BufferSlice& data) const
 		return 9;
 	case IT::ReferenceIsNull:
 		return 1;
+	case IT::I32Load:
+	case IT::I64Load:
+	case IT::F32Load:
+	case IT::F64Load:
+	case IT::I32Store:
+	case IT::I64Store:
+	case IT::F32Store:
+	case IT::F64Store:
+		if (memoryOffset() <= 255) {
+			return 2;
+		}
+		else {
+			return 5;
+		}
+	case IT::I32ReinterpretF32:
+	case IT::I64ReinterpretF64:
+	case IT::F32ReinterpretI32:
+	case IT::F64ReinterpretI64:
+		return 0;
 	default: assert(false);
 	}
 }
