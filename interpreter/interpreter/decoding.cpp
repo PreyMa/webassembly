@@ -756,6 +756,11 @@ FunctionCode ModuleParser::parseFunctionCode()
 	return { Expression{codeSlice, instructions}, std::move(locals) };
 }
 
+bool FunctionType::returnsVoid() const
+{
+	return mResults.empty();
+}
+
 bool FunctionType::takesVoidReturnsVoid() const
 {
 	return mParameters.empty() && mResults.empty();

@@ -48,6 +48,7 @@ namespace WASM {
 		const std::vector<ValType>& parameters() const { return mParameters; }
 		const std::vector<ValType>& results() const { return mResults; }
 
+		bool returnsVoid() const;
 		bool takesVoidReturnsVoid() const;
 		u32 parameterStackSectionSizeInBytes() const;
 		u32 resultStackSectionSizeInBytes() const;

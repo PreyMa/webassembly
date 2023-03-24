@@ -425,7 +425,7 @@ void ModuleCompiler::compileFunction(BytecodeFunction& function)
 	for (auto& ins : function.expression()) {
 		compileInstruction(ins, insCounter++);
 	}
-
+	
 	auto modName = module.name();
 	if (modName.size() > 20) {
 		modName = "..." + modName.substr(modName.size() - 17);
@@ -1118,6 +1118,20 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 		}
 	};
 
+	auto printReturnInstructionForCurrentFunction = [&]() {
+		auto resultSpaceInBytes = currentFunction->functionType().resultStackSectionSizeInBytes();
+		assert(resultSpaceInBytes % 4 == 0);
+		auto resultSpaceInSlots = resultSpaceInBytes / 4;
+		if (resultSpaceInSlots <= 255) {
+			print(Bytecode::ReturnFew);
+			printU8(resultSpaceInSlots);
+		}
+		else {
+			print(Bytecode::ReturnMany);
+			printU32(resultSpaceInSlots);
+		}
+	};
+
 
 	using IT = InstructionType;
 	switch (opCode) {
@@ -1164,6 +1178,20 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 		auto frame = popControlFrame();
 		pushValues(frame.blockTypeIndex.results());
 		frame.processAddressPatchRequests(*this);
+
+		// Add a return instruction at the end of the function block
+		if (controlStack.empty() && !frame.unreachable) {
+			auto isEmpty = currentFunction->expression().size() < 2;
+			if (isEmpty) {
+				printReturnInstructionForCurrentFunction();
+			}
+			else {
+				auto& lastInstruction = *(currentFunction->expression().end() - 2);
+				if (lastInstruction != InstructionType::Return) {
+					printReturnInstructionForCurrentFunction();
+				}
+			}
+		}
 		return;
 	}
 
@@ -1188,17 +1216,7 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 		popValues(controlStack[0].blockTypeIndex.results());
 
 		if (isReachable()) {
-			auto resultSpaceInBytes = currentFunction->functionType().resultStackSectionSizeInBytes();
-			assert(resultSpaceInBytes % 4 == 0);
-			auto resultSpaceInSlots = resultSpaceInBytes / 4;
-			if (resultSpaceInSlots <= 255) {
-				print(Bytecode::ReturnFew);
-				printU8(resultSpaceInSlots);
-			}
-			else {
-				print(Bytecode::ReturnMany);
-				printU32(resultSpaceInSlots);
-			}
+			printReturnInstructionForCurrentFunction();
 		}
 
 		setUnreachable();
