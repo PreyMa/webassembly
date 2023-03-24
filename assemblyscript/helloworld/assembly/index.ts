@@ -5,14 +5,14 @@ export let globalInt: i64= 123;
 export const globalConstInt: u32= 0;
 export let globalIntWithoutInit: u32;
 
-class Kek {
+class SampleClass {
   private x: u32;
   constructor(x: u32) { this.x = x; }
-  sayHello() : string { return "kek"; }
+  sayHello() : string { return "sample"; }
 };
 
-class Speck extends Kek {
-  sayHello() : string { return "speck"; }
+class SampleDerivedClass extends SampleClass {
+  sayHello() : string { return "derived"; }
 }
 
 export function subtract(a: i32, b: i32): i32 {
@@ -42,10 +42,10 @@ export function calcThing( a: i32 ) : i32 {
   return i
 }
 
-/*export function kek( x: u32 ) : Kek {
-  return x ? new Kek( x ) : new Speck( x );
+export function create( x: u32 ) : SampleClass {
+  return x ? new SampleClass( x ) : new SampleDerivedClass( x );
 }
 
-export function dreck( k: Kek ) : string {
+export function dreck( k: SampleClass ) : string {
   return k.sayHello();
-}*/
+}
