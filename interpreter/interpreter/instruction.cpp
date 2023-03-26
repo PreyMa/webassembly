@@ -782,8 +782,7 @@ void Instruction::printBranchTableInstruction(std::ostream& out, const BufferSli
 	// FIXME: If buffer iterator was read only this ugly const cast could go away
 	assert(type == InstructionType::BranchTable);
 	out << type.name() << " default: " << operandC << " [";
-	auto it = const_cast<BufferSlice&>(data).iterator();
-	it.moveTo(vectorPointer);
+	auto it = branchTableVector(data);
 	auto numLabels = it.nextU32();
 	for (u32 i = 0; i != numLabels; i++) {
 		out << " " << it.nextU32();
@@ -1023,7 +1022,7 @@ bool InstructionType::isMemory() const
 	}
 }
 
-bool WASM::InstructionType::requiresModuleInstance() const
+bool InstructionType::requiresModuleInstance() const
 {
 	switch (value) {
 	case CallIndirect:
@@ -1769,12 +1768,18 @@ u32 Instruction::branchLabel() const {
 	return operandA;
 }
 
+u32 WASM::Instruction::branchTableDefaultLabel() const
+{
+	assert(type == InstructionType::BranchTable);
+	return operandC;
+}
+
 u32 Instruction::localIndex() const {
 	// assert(isGetterSetter());
 	return operandA;
 }
 
-u32 WASM::Instruction::globalIndex() const
+u32 Instruction::globalIndex() const
 {
 	assert(type == InstructionType::GlobalGet || type == InstructionType::GlobalSet);
 	return operandA;
@@ -1785,13 +1790,13 @@ u32 Instruction::functionIndex() const {
 	return operandA;
 }
 
-u32 WASM::Instruction::memoryOffset() const
+u32 Instruction::memoryOffset() const
 {
 	assert(type.isMemory());
 	return operandB;
 }
 
-u32 WASM::Instruction::dataSegmentIndex() const
+u32 Instruction::dataSegmentIndex() const
 {
 	assert(type == InstructionType::MemoryInit || type == InstructionType::DataDrop);
 	return operandA;
@@ -1803,13 +1808,13 @@ i32 Instruction::asI32Constant() const
 	return i32Constant;
 }
 
-u32 WASM::Instruction::asIF32Constant() const
+u32 Instruction::asIF32Constant() const
 {
 	assert(type == InstructionType::I32Const || type == InstructionType::F32Const); 
 	return i32Constant;
 }
 
-u64 WASM::Instruction::asIF64Constant() const
+u64 Instruction::asIF64Constant() const
 {
 	assert(type == InstructionType::I64Const || type == InstructionType::F64Const);
 	return i64Constant;
@@ -1825,13 +1830,21 @@ std::optional<u32> Instruction::asReferenceIndex() const
 	return {};
 }
 
-std::span<const u8> WASM::Instruction::selectTypeVector(const BufferSlice& data) const
+std::span<const u8> Instruction::selectTypeVector(const BufferSlice& data) const
 {
 	assert(type == InstructionType::SelectFrom);
 	auto it = const_cast<BufferSlice&>(data).iterator();
 	it.moveTo(vectorPointer);
 	auto numTypes = it.nextU32();
 	return { it.positionPointer(), numTypes };
+}
+
+BufferIterator WASM::Instruction::branchTableVector(const BufferSlice& data) const
+{
+	assert(type == InstructionType::BranchTable);
+	auto it = const_cast<BufferSlice&>(data).iterator();
+	it.moveTo(vectorPointer);
+	return it;
 }
 
 std::optional<Bytecode> Instruction::toBytecode() const
@@ -2049,7 +2062,7 @@ std::optional<Bytecode> Instruction::toBytecode() const
 	}
 }
 
-u32 WASM::Instruction::maxPrintedByteLength(const BufferSlice& data) const
+u32 Instruction::maxPrintedByteLength(const BufferSlice& data) const
 {
 	auto bytecode = toBytecode();
 	if (bytecode.has_value()) {
@@ -2071,9 +2084,7 @@ u32 WASM::Instruction::maxPrintedByteLength(const BufferSlice& data) const
 	case IT::BranchIf:
 		return 5; // Far jump
 	case IT::BranchTable: {
-		auto it = const_cast<BufferSlice&>(data).iterator();
-		it.moveTo(vectorPointer);
-		auto numLabels = it.nextU32();
+		auto numLabels = branchTableVector(data).nextU32();
 		return 9 + numLabels * 4;
 	}
 	case IT::Return: return 5;

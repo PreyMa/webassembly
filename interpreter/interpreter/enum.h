@@ -18,8 +18,6 @@ namespace WASM {
 		operator int() const { return value; }
 
 		TSpecial operator=(TSpecial other) { value = other.value; return *this; }
-		TSpecial obzzt(TSpecial other) { value = other.value; return *this; }
-
 
 	protected:
 		TStorage value;

@@ -36,6 +36,8 @@ namespace WASM {
 		u32 typeIndex() const { return mTypeIndex; }
 		const Expression& expression() const { return code; }
 		virtual const FunctionType& functionType() const override { return type; }
+		u32 maxStackHeight() const { return mMaxStackHeight; }
+		void setMaxStackHeight(u32 h) { mMaxStackHeight = h; }
 
 		std::optional<LocalOffset> localByIndex(u32) const;
 		bool hasLocals() const;
@@ -53,6 +55,7 @@ namespace WASM {
 		FunctionType& type;
 		Expression code;
 		std::vector<LocalOffset> uncompressedLocals;
+		u32 mMaxStackHeight{ 0 };
 	};
 
 	class FunctionTable {
@@ -213,10 +216,26 @@ namespace WASM {
 
 	private:
 		using ValueRecord = std::optional<ValType>;
-		using LabelTypes = std::variant<BlockTypeParameters, BlockTypeResults>;
+		
+		class LabelTypes {
+		public:
+			using Storage = std::variant<BlockTypeParameters, BlockTypeResults>;
+
+			LabelTypes(Storage s) : storage{ std::move(s) } {}
+
+			bool isParameters() const { return storage.index() == 0; }
+			const BlockTypeParameters& asParameters() const { return std::get<0>(storage); }
+			const BlockTypeResults& asResults() const { return std::get<1>(storage); }
+
+			std::optional<sizeType> size(const Module&) const;
+
+		private:
+			Storage storage;
+		};
 
 		struct AddressPatchRequest {
 			sizeType locationToPatch;
+			sizeType jumpReferencePosition;
 			bool isNearJump;
 		};
 
@@ -256,6 +275,7 @@ namespace WASM {
 		ValueRecord popValue();
 		ValueRecord popValue(ValueRecord);
 		void pushValues(const std::vector<ValType>&);
+		void pushValues(const std::vector<ValueRecord>&);
 		void pushValues(const BlockTypeParameters&);
 		void pushValues(const BlockTypeResults&);
 		void pushValues(const LabelTypes&);
@@ -277,6 +297,7 @@ namespace WASM {
 		void compileNumericBinaryInstruction(Instruction);
 		void compileMemoryDataInstruction(Instruction);
 		void compileMemoryControlInstruction(Instruction);
+		void compileBranchTableInstruction(Instruction);
 		void compileInstruction(Instruction, u32);
 		void resetCachedReturnList(u32);
 
@@ -285,7 +306,7 @@ namespace WASM {
 		const FunctionType& blockTypeByIndex(u32);
 		const Memory& memoryByIndex(u32);
 		u32 measureMaxPrintedBlockLength(u32, u32, bool= false) const;
-		void requestAddressPatch(u32, bool, bool= false);
+		void requestAddressPatch(u32, bool, bool = false, std::optional<u32> jumpReferencePosition = {});
 		void patchAddress(const AddressPatchRequest&);
 
 		void printBytecode(std::ostream&);
@@ -298,6 +319,7 @@ namespace WASM {
 		Buffer printedBytecode;
 
 		u32 stackHeightInBytes{ 0 };
+		u32 maxStackHeightInBytes{ 0 };
 		std::vector<ValueRecord> valueStack;
 		std::vector<ControlFrame> controlStack;
 		std::vector<ValueRecord> cachedReturnList;

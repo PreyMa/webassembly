@@ -368,7 +368,41 @@ void ModuleLinker::link()
 
 
 
-std::variant<BlockTypeParameters, BlockTypeResults> ModuleCompiler::ControlFrame::labelTypes() const
+std::optional<sizeType> ModuleCompiler::LabelTypes::size(const Module& module) const
+{
+	u32 typeIndex= 0;
+	if (isParameters()) {
+		if (!asParameters().has_value()) {
+			return 0;
+		}
+
+		typeIndex = *asParameters();
+	}
+	else {
+		if (asResults().blockType == BlockType::None) {
+			return 0;
+		}
+
+		if (asResults().blockType == BlockType::ValType) {
+			return 1;
+		}
+
+		typeIndex = asResults().index;
+	}
+
+	if (typeIndex >= module.functionTypes.size()) {
+		return {};
+	}
+
+	auto& functionType = module.functionTypes[typeIndex];
+	if (isParameters()) {
+		return functionType.parameters().size();
+	}
+
+	return functionType.results().size();
+}
+
+ModuleCompiler::LabelTypes ModuleCompiler::ControlFrame::labelTypes() const
 {
 	if (opCode == InstructionType::Loop) {
 		return { blockTypeIndex.parameters() };
@@ -444,6 +478,9 @@ void ModuleCompiler::compileFunction(BytecodeFunction& function)
 	for (auto& ins : function.expression()) {
 		compileInstruction(ins, insCounter++);
 	}
+
+	assert(maxStackHeightInBytes % 4 == 0);
+	function.setMaxStackHeight(maxStackHeightInBytes / 4);
 	
 	auto modName = module.name();
 	if (modName.size() > 20) {
@@ -452,7 +489,7 @@ void ModuleCompiler::compileFunction(BytecodeFunction& function)
 
 	auto maybeFunctionName = function.lookupName(module);
 	auto* functionName = maybeFunctionName.has_value() ? maybeFunctionName->c_str() : "<unknown name>";
-	std::cout << "Compiled function " << modName << " :: " << functionName << " (index " << function.index() << ")" << std::endl;
+	std::cout << "Compiled function " << modName << " :: " << functionName << " (index " << function.index() << ")" << " (max stack height " << maxStackHeightInBytes/4 << " slots)" << std::endl;
 	printBytecode(std::cout);
 }
 
@@ -460,6 +497,7 @@ void ModuleCompiler::pushValue(ValType type)
 {
 	valueStack.emplace_back(type);
 	stackHeightInBytes += type.sizeInBytes();
+	maxStackHeightInBytes = std::max(maxStackHeightInBytes, stackHeightInBytes);
 }
 
 void WASM::ModuleCompiler::pushMaybeValue(ValueRecord record)
@@ -480,6 +518,20 @@ void ModuleCompiler::pushValues(const std::vector<ValType>& types)
 
 	for (auto type : types) {
 		stackHeightInBytes += type.sizeInBytes();
+		maxStackHeightInBytes = std::max(maxStackHeightInBytes, stackHeightInBytes);
+	}
+}
+
+void ModuleCompiler::pushValues(const std::vector<ValueRecord>& types)
+{
+	valueStack.reserve(valueStack.size() + types.size());
+	valueStack.insert(valueStack.end(), types.begin(), types.end());
+
+	for (auto type : types) {
+		if (type.has_value()) {
+			stackHeightInBytes += type->sizeInBytes();
+			maxStackHeightInBytes = std::max(maxStackHeightInBytes, stackHeightInBytes);
+		}
 	}
 }
 
@@ -514,11 +566,11 @@ void ModuleCompiler::pushValues(const BlockTypeResults& results)
 
 void ModuleCompiler::pushValues(const ModuleCompiler::LabelTypes& types)
 {
-	if (types.index() == 0) {
-		pushValues(std::get<0>(types));
+	if (types.isParameters()) {
+		pushValues(types.asParameters());
 	}
 	else {
-		pushValues(std::get<1>(types));
+		pushValues(types.asResults());
 	}
 }
 
@@ -604,13 +656,14 @@ u32 WASM::ModuleCompiler::measureMaxPrintedBlockLength(u32 startInstruction, u32
 	throwCompilationError("Invalid block nesting while measuring block length");
 }
 
-void WASM::ModuleCompiler::requestAddressPatch(u32 labelIdx, bool isNearJump, bool elseLabel)
+void WASM::ModuleCompiler::requestAddressPatch(u32 labelIdx, bool isNearJump, bool elseLabel, std::optional<u32> jumpReferencePosition)
 {
 	if (labelIdx >= controlStack.size()) {
 		throwCompilationError("Control stack underflow when requesting address patch");
 	}
 
-	AddressPatchRequest req{ printedBytecode.size(), isNearJump };
+	auto printerPos = printedBytecode.size();
+	AddressPatchRequest req{ printerPos, jumpReferencePosition.value_or(printerPos), isNearJump };
 	auto& frame = controlStack[controlStack.size() - labelIdx - 1];
 
 	// Loops do not need address patching as they are always jumped back to
@@ -635,7 +688,7 @@ void WASM::ModuleCompiler::requestAddressPatch(u32 labelIdx, bool isNearJump, bo
 void ModuleCompiler::patchAddress(const AddressPatchRequest& request)
 {
 	auto targetAddress = printedBytecode.size();
-	i32 distance = targetAddress - request.locationToPatch;
+	i32 distance = targetAddress - request.jumpReferencePosition;
 
 	assert(!request.isNearJump || isShortDistance(distance));
 	if (isReachable()) {
@@ -777,21 +830,21 @@ void ModuleCompiler::popValues(const BlockTypeParameters& expected) {
 
 const std::vector<ModuleCompiler::ValueRecord>& ModuleCompiler::popValuesToList(const ModuleCompiler::LabelTypes& types)
 {
-	if (types.index() == 0) {
-		return popValuesToList(std::get<0>(types));
+	if (types.isParameters()) {
+		return popValuesToList(types.asParameters());
 	}
 
-	return popValuesToList(std::get<1>(types));
+	return popValuesToList(types.asResults());
 }
 
 void ModuleCompiler::popValues(const ModuleCompiler::LabelTypes& types)
 {
-	if (types.index() == 0) {
-		popValues(std::get<0>(types));
+	if (types.isParameters()) {
+		popValues(types.asParameters());
 		return;
 	}
 
-	popValues(std::get<1>(types));
+	popValues(types.asResults());
 }
 
 ModuleCompiler::ControlFrame& ModuleCompiler::pushControlFrame(InstructionType opCode, BlockTypeIndex blockTypeIndex)
@@ -847,6 +900,7 @@ void ModuleCompiler::resetBytecodePrinter()
 	controlStack.clear();
 	addressPatches.clear();
 	stackHeightInBytes = 0;
+	maxStackHeightInBytes = 0;
 }
 
 void ModuleCompiler::print(Bytecode c)
@@ -1103,6 +1157,73 @@ void WASM::ModuleCompiler::compileMemoryControlInstruction(Instruction instructi
 	}
 }
 
+void WASM::ModuleCompiler::compileBranchTableInstruction(Instruction instruction)
+{
+	const u32 jumpReferencePosition = printedBytecode.size() + 1; // Consider the size of the bytecode -> +1
+	auto printJumpAddress = [&](u32 labelIdx, const ControlFrame& frame) {
+		if (isReachable()) {
+			// Backwards jump
+			if (frame.opCode == InstructionType::Loop) {
+				i32 distance = frame.bytecodeOffset - jumpReferencePosition;
+				printU32(distance);
+				return;
+			}
+
+			// Forwards jump
+			requestAddressPatch(labelIdx, false, false, jumpReferencePosition);
+		}
+	};
+
+	popValue(ValType::I32);
+	auto defaultLabel = instruction.branchTableDefaultLabel();
+	if (defaultLabel > controlStack.size()) {
+		throwCompilationError("Control stack underflow in branch table default label");
+	}
+
+	auto& defaultLabelFrame = controlStack[controlStack.size() - defaultLabel - 1];
+	auto defaultLabelTypes = defaultLabelFrame.labelTypes();
+	auto defaultArity = defaultLabelTypes.size(module);
+
+	if (!defaultArity.has_value()) {
+		throwCompilationError("Default label type references invalid function type");
+	}
+
+	auto it = instruction.branchTableVector(currentFunction->expression().bytes());
+	auto numLabels = it.nextU32();
+
+	if (isReachable()) {
+		print(Bytecode::JumpTable);
+		printU32(numLabels);
+	}
+	
+	for (u32 i = 0; i != numLabels; i++) {
+		auto label = it.nextU32();
+		if (label > controlStack.size()) {
+			throwCompilationError("Control stack underflow in branch tabel label");
+		}
+
+		auto& labelFrame = controlStack[controlStack.size() - label - 1];
+		auto labelTypes = labelFrame.labelTypes();
+		auto arity = labelTypes.size(module);
+		if (!arity.has_value()) {
+			throwCompilationError("Label type references invalid function type");
+		}
+
+		if (arity != defaultArity) {
+			throwCompilationError("Branch table arity mismatch");
+		}
+
+		pushValues(popValuesToList(labelTypes));
+
+		printJumpAddress(label, labelFrame);
+	}
+	popValues(defaultLabelTypes);
+
+	printJumpAddress(defaultLabel, defaultLabelFrame);
+
+	setUnreachable();
+}
+
 void ModuleCompiler::compileInstruction(Instruction instruction, u32 instructionCounter)
 {
 	auto opCode = instruction.opCode();
@@ -1320,7 +1441,9 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 		return;
 	}
 
-				   // case IT::BranchTable:
+	case IT::BranchTable:
+		compileBranchTableInstruction(instruction);
+		return;
 
 	case IT::Call: {
 		auto functionIdx = instruction.functionIndex();
@@ -1521,8 +1644,16 @@ void WASM::ModuleCompiler::printBytecode(std::ostream& out)
 
 		if (opCode == Bytecode::JumpShort || opCode == Bytecode::IfTrueJumpShort || opCode == Bytecode::IfFalseJumpShort) {
 			out << " (-> " << opCodeAddress+ 1 + (i8)lastU8 << ")";
-		} else if (opCode == Bytecode::JumpLong || opCode == Bytecode::IfTrueJumpLong || opCode == Bytecode::IfFalseJumpLong) {
+		}
+		else if (opCode == Bytecode::JumpLong || opCode == Bytecode::IfTrueJumpLong || opCode == Bytecode::IfFalseJumpLong) {
 			out << " (-> " << opCodeAddress+ 1 + (i32)lastU32 << ")";
+		}
+		else if (opCode == Bytecode::JumpTable) {
+			for (u32 i = 0; i != lastU32; i++) {
+				out << "\n      (" << setw(2) << i << " -> " << opCodeAddress + 1 + (i32)it.nextLittleEndianU32() << ")";
+			}
+
+			out << "\n      (default -> " << opCodeAddress + 1 + (i32)it.nextLittleEndianU32() << ")";
 		}
 
 		out << dec << std::endl;

@@ -289,6 +289,7 @@ namespace WASM {
 
 		BlockTypeIndex blockTypeIndex() const;
 		u32 branchLabel() const;
+		u32 branchTableDefaultLabel() const;
 		u32 localIndex() const;
 		u32 globalIndex() const;
 		u32 functionIndex() const;
@@ -301,6 +302,7 @@ namespace WASM {
 		std::optional<u32> asReferenceIndex() const;
 
 		std::span<const u8> selectTypeVector(const BufferSlice&) const;
+		BufferIterator branchTableVector(const BufferSlice&) const;
 
 		std::optional<Bytecode> toBytecode() const;
 		u32 maxPrintedByteLength(const BufferSlice&) const;

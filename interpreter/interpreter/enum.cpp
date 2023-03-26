@@ -368,7 +368,7 @@ BytecodeArguments WASM::Bytecode::arguments() const
 	case IfTrueJumpLong:
 	case IfFalseJumpLong:
 		return BA::SingleU32;
-	case JumpTable: return BA::DualU32;
+	case JumpTable: return BA::SingleU32;
 	case ReturnFew: return BA::SingleU8;
 	case ReturnMany: return BA::SingleU32;
 	case Call: return BA::SingleU64SingleU32;
