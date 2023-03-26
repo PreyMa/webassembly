@@ -1768,7 +1768,7 @@ u32 Instruction::branchLabel() const {
 	return operandA;
 }
 
-u32 WASM::Instruction::branchTableDefaultLabel() const
+u32 Instruction::branchTableDefaultLabel() const
 {
 	assert(type == InstructionType::BranchTable);
 	return operandC;
@@ -1839,7 +1839,7 @@ std::span<const u8> Instruction::selectTypeVector(const BufferSlice& data) const
 	return { it.positionPointer(), numTypes };
 }
 
-BufferIterator WASM::Instruction::branchTableVector(const BufferSlice& data) const
+BufferIterator Instruction::branchTableVector(const BufferSlice& data) const
 {
 	assert(type == InstructionType::BranchTable);
 	auto it = const_cast<BufferSlice&>(data).iterator();

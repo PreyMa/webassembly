@@ -89,7 +89,7 @@ void Buffer::appendLittleEndianU64(u64 val)
 	mData.push_back((val >> 56) & 0xFF);
 }
 
-void WASM::Buffer::writeLittleEndianU32(sizeType pos, u32 val)
+void Buffer::writeLittleEndianU32(sizeType pos, u32 val)
 {
 	assert(pos <= size());
 	if (pos + 4 > size()) {
@@ -131,7 +131,7 @@ std::string BufferSlice::toString()
 	return std::string{ (char*)mBegin, mLength };
 }
 
-void WASM::BufferSlice::print(std::ostream& out) const
+void BufferSlice::print(std::ostream& out) const
 {
 	out << "[" << std::hex;
 

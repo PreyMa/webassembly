@@ -60,7 +60,7 @@ u32 BytecodeFunction::localsSizeInBytes() const
 	return endLocalsByteOffset - beginLocalsByteOffset;
 }
 
-bool WASM::BytecodeFunction::requiresModuleInstance() const
+bool BytecodeFunction::requiresModuleInstance() const
 {
 	for (auto& ins : code) {
 		if (ins.opCode().requiresModuleInstance()) {
@@ -71,12 +71,12 @@ bool WASM::BytecodeFunction::requiresModuleInstance() const
 	return false;
 }
 
-Nullable<const std::string> WASM::BytecodeFunction::lookupName(const Module& module)
+Nullable<const std::string> BytecodeFunction::lookupName(const Module& module)
 {
 	return module.functionNameByIndex(mIndex);
 }
 
-void WASM::BytecodeFunction::uncompressLocalTypes(const std::vector<CompressedLocalTypes>& compressedLocals)
+void BytecodeFunction::uncompressLocalTypes(const std::vector<CompressedLocalTypes>& compressedLocals)
 {
 	// Count the parameters and locals
 	auto& params = type.parameters();
@@ -284,7 +284,7 @@ std::optional<Module::ResolvedGlobal> Module::globalByIndex(u32 idx)
 	return ResolvedGlobal{ globals64[storageIndex], globalType };
 }
 
-Nullable<Memory> WASM::Module::memoryByIndex(u32 idx)
+Nullable<Memory> Module::memoryByIndex(u32 idx)
 {
 	if (idx != 0) {
 		return {};
@@ -303,7 +303,7 @@ Nullable<Memory> WASM::Module::memoryByIndex(u32 idx)
 	return *ownedMemoryInstance;
 }
 
-std::optional<ExportItem> WASM::Module::exportByName(const std::string& name, ExportType type) const
+std::optional<ExportItem> Module::exportByName(const std::string& name, ExportType type) const
 {
 	auto findFunction = exports.find(name);
 	if (findFunction == exports.end()) {
@@ -328,7 +328,7 @@ Nullable<Function> Module::exportedFunctionByName(const std::string& name)
 	return functionByIndex(exp->mIndex);
 }
 
-Nullable<const std::string> WASM::Module::functionNameByIndex(u32 functionIdx) const
+Nullable<const std::string> Module::functionNameByIndex(u32 functionIdx) const
 {
 	auto fnd = functionNameMap.find(functionIdx);
 	if (fnd == functionNameMap.end()) {
@@ -500,7 +500,7 @@ void ModuleCompiler::pushValue(ValType type)
 	maxStackHeightInBytes = std::max(maxStackHeightInBytes, stackHeightInBytes);
 }
 
-void WASM::ModuleCompiler::pushMaybeValue(ValueRecord record)
+void ModuleCompiler::pushMaybeValue(ValueRecord record)
 {
 	if (record.has_value()) {
 		pushValue(*record);
@@ -593,7 +593,7 @@ BytecodeFunction::LocalOffset ModuleCompiler::localByIndex(u32 idx) const
 	throwCompilationError("Local index out of bounds");
 }
 
-Module::ResolvedGlobal WASM::ModuleCompiler::globalByIndex(u32 idx) const
+Module::ResolvedGlobal ModuleCompiler::globalByIndex(u32 idx) const
 {
 	auto global = module.globalByIndex(idx);
 	if (global.has_value()) {
@@ -603,7 +603,7 @@ Module::ResolvedGlobal WASM::ModuleCompiler::globalByIndex(u32 idx) const
 	throwCompilationError("Global index out of bounds");
 }
 
-const FunctionType& WASM::ModuleCompiler::blockTypeByIndex(u32 idx)
+const FunctionType& ModuleCompiler::blockTypeByIndex(u32 idx)
 {
 	if (idx >= module.functionTypes.size()) {
 		throwCompilationError("Block type index references invalid function type");
@@ -621,7 +621,7 @@ const Memory& ModuleCompiler::memoryByIndex(u32 idx)
 	throwCompilationError("Memory index out of bounds");
 }
 
-u32 WASM::ModuleCompiler::measureMaxPrintedBlockLength(u32 startInstruction, u32 labelIdx, bool runToElse) const
+u32 ModuleCompiler::measureMaxPrintedBlockLength(u32 startInstruction, u32 labelIdx, bool runToElse) const
 {
 	assert(currentFunction);
 
@@ -656,7 +656,7 @@ u32 WASM::ModuleCompiler::measureMaxPrintedBlockLength(u32 startInstruction, u32
 	throwCompilationError("Invalid block nesting while measuring block length");
 }
 
-void WASM::ModuleCompiler::requestAddressPatch(u32 labelIdx, bool isNearJump, bool elseLabel, std::optional<u32> jumpReferencePosition)
+void ModuleCompiler::requestAddressPatch(u32 labelIdx, bool isNearJump, bool elseLabel, std::optional<u32> jumpReferencePosition)
 {
 	if (labelIdx >= controlStack.size()) {
 		throwCompilationError("Control stack underflow when requesting address patch");
@@ -883,7 +883,7 @@ void ModuleCompiler::setUnreachable()
 	frame.unreachable = true;
 }
 
-bool WASM::ModuleCompiler::isReachable() const
+bool ModuleCompiler::isReachable() const
 {
 	if (controlStack.empty()) {
 		throwCompilationError("Control stack is empty");
@@ -958,7 +958,7 @@ void ModuleCompiler::printBytecodeExpectingNoArgumentsIfReachable(Instruction in
 	}
 }
 
-void WASM::ModuleCompiler::printLocalGetSetTeeBytecodeIfReachable(
+void ModuleCompiler::printLocalGetSetTeeBytecodeIfReachable(
 	BytecodeFunction::LocalOffset local,
 	Bytecode near32,
 	Bytecode near64,
@@ -1116,7 +1116,7 @@ void ModuleCompiler::compileMemoryDataInstruction(Instruction instruction)
 	}
 }
 
-void WASM::ModuleCompiler::compileMemoryControlInstruction(Instruction instruction)
+void ModuleCompiler::compileMemoryControlInstruction(Instruction instruction)
 {
 	if (instruction != InstructionType::DataDrop) {
 		// Check that the memory at least exists
@@ -1157,7 +1157,7 @@ void WASM::ModuleCompiler::compileMemoryControlInstruction(Instruction instructi
 	}
 }
 
-void WASM::ModuleCompiler::compileBranchTableInstruction(Instruction instruction)
+void ModuleCompiler::compileBranchTableInstruction(Instruction instruction)
 {
 	const u32 jumpReferencePosition = printedBytecode.size() + 1; // Consider the size of the bytecode -> +1
 	auto printJumpAddress = [&](u32 labelIdx, const ControlFrame& frame) {
@@ -1636,7 +1636,7 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 	throw std::runtime_error{ "Compilation not implemented for instruction" };
 }
 
-void WASM::ModuleCompiler::printBytecode(std::ostream& out)
+void ModuleCompiler::printBytecode(std::ostream& out)
 {
 	using std::setw, std::hex, std::dec;
 

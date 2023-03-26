@@ -355,7 +355,7 @@ const char* Bytecode::name() const {
 	}
 }
 
-BytecodeArguments WASM::Bytecode::arguments() const
+BytecodeArguments Bytecode::arguments() const
 {
 	using BA = BytecodeArguments;
 	switch (value) {
@@ -612,7 +612,7 @@ bool BytecodeArguments::isU64() const
 	return value == SingleU64 || value == SingleU64SingleU32 || value == DualU64;
 }
 
-u32 WASM::BytecodeArguments::sizeInBytes() const
+u32 BytecodeArguments::sizeInBytes() const
 {
 	switch (value) {
 		case None: return 0;

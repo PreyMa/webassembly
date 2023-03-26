@@ -784,7 +784,7 @@ u32 FunctionType::parameterStackSectionSizeInBytes() const
 	return numBytesParameters;
 }
 
-u32 WASM::FunctionType::resultStackSectionSizeInBytes() const
+u32 FunctionType::resultStackSectionSizeInBytes() const
 {
 	if (requiredResultStackBytes.has_value()) {
 		return *requiredResultStackBytes;
@@ -1168,7 +1168,7 @@ void ModuleValidator::validateElementSegment(const Element& elem)
 	std::cout << "Validated element segment" << std::endl;
 }
 
-void WASM::ModuleValidator::validateImports()
+void ModuleValidator::validateImports()
 {
 	std::cout << "# Validate imports:" << std::endl;
 	// TODO: Validate function imports
@@ -1244,7 +1244,7 @@ void ParsingState::clear()
 	functionLocalNames.clear();
 }
 
-Nullable<const GlobalBase> WASM::GlobalImport::getBase() const
+Nullable<const GlobalBase> GlobalImport::getBase() const
 {
 	if (globalType.valType().sizeInBytes() == 4) {
 		auto& ptr= *resolvedGlobal32;
