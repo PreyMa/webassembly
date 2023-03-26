@@ -1592,6 +1592,36 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 		return;
 	}
 
+	case IT::ReferenceNull:
+		pushValue(ValType::FuncRef);
+		if (isReachable()) {
+			print(Bytecode::I64Const);
+			printU64(0x00);
+		}
+		return;
+
+	case IT::ReferenceIsNull:
+		popValue(ValType::FuncRef);
+		pushValue(ValType::I32);
+		if (isReachable()) {
+			print(Bytecode::I64EqualZero);
+		}
+		return;
+
+	case IT::ReferenceFunction: {
+		pushValue(ValType::FuncRef);
+		auto function = module.functionByIndex( instruction.functionIndex() );
+		if (!function.has_value()) {
+			throwCompilationError("ReferenceFunction instruction reference invalid function index");
+		}
+		if (isReachable()) {
+			// FIXME: Put the actual bytecode address instead of the function instance?
+			print(Bytecode::I64Const);
+			printPointer(function.pointer());
+		}
+		return;
+	}
+
 	case IT::MemorySize:
 	case IT::MemoryGrow:
 	case IT::MemoryFill:
