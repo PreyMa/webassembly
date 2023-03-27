@@ -289,6 +289,8 @@ namespace WASM {
 
 	class ModuleParser : public ParsingState {
 	public:
+		ModuleParser(Nullable<Introspector> intro) : introspector{ intro } {}
+
 		void parse(Buffer, std::string);
 		Module toModule();
 
@@ -343,11 +345,14 @@ namespace WASM {
 		std::vector<u32> parseU32Vector();
 
 		void throwParsingError(const char*) const;
+
+		Nullable<Introspector> introspector;
 	};
 
 
 	class ModuleValidator {
 	public:
+		ModuleValidator(Nullable<Introspector> intro) : introspector{ intro } {}
 
 		void validate(const ParsingState&);
 
@@ -374,5 +379,7 @@ namespace WASM {
 
 		const ParsingState* parsingState{ nullptr };
 		std::unordered_set<std::string> exportNames;
+
+		Nullable<Introspector> introspector;
 	};
 }

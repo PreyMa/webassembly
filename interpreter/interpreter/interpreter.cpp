@@ -1,5 +1,6 @@
 ﻿
 #include "interpreter.h"
+#include "introspection.h"
 #include "bytecode.h"
 
 #include <iostream>
@@ -14,6 +15,9 @@ void HostFunctionBase::print(std::ostream& out) const {
 	mFunctionType.print(out);
 }
 
+Interpreter::Interpreter() = default;
+Interpreter::~Interpreter() = default;
+
 void Interpreter::loadModule(std::string path)
 {
 	// Loading another module might cause a reallocation in the modules vector, which
@@ -22,11 +26,13 @@ void Interpreter::loadModule(std::string path)
 		throw std::runtime_error{ "Cannot load module after linking step" };
 	}
 
+	auto introspector= Nullable<Introspector>::fromPointer(attachedIntrospector);
+
 	auto buffer= Buffer::fromFile(path);
-	ModuleParser parser;
+	ModuleParser parser{ introspector };
 	parser.parse(std::move(buffer), std::move(path));
 
-	ModuleValidator validator;
+	ModuleValidator validator{ introspector };
 	validator.validate(parser);
 
 	modules.emplace_back( parser.toModule() );
@@ -55,6 +61,11 @@ void Interpreter::compileAndLinkModules()
 	}
 
 	hasLinked = true;
+}
+
+void Interpreter::attachIntrospector(std::unique_ptr<Introspector> introspector)
+{
+	attachedIntrospector = std::move(introspector);
 }
 
 Nullable<Function> Interpreter::findFunction(const std::string& moduleName, const std::string& functionName)

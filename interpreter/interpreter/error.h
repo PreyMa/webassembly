@@ -57,6 +57,6 @@ namespace WASM {
 		std::string moduleName;
 		std::optional<u32> functionIndex;
 	};
-
-	std::ostream& operator<<(std::ostream&, const Error&);
 }
+
+std::ostream& operator<<(std::ostream&, const WASM::Error&);

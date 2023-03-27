@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 namespace WASM {
 	template<typename T>
 	class Nullable {
@@ -11,6 +13,11 @@ namespace WASM {
 
 		template<typename U>
 		Nullable(const Nullable<U>& x) : ptr{ x.ptr } {};
+
+		template<typename U>
+		static Nullable<T> fromPointer(const std::unique_ptr<U>& ptr) {
+			return { ptr.get() };
+		}
 
 		bool has_value() const { return ptr != nullptr; }
 		T& value() { return *ptr; }
@@ -31,6 +38,8 @@ namespace WASM {
 		Nullable operator=(const Nullable<U>& x) { ptr = x.ptr; return *this; };
 
 	private:
+		Nullable(T* p) : ptr{ p } {}
+
 		T* ptr{ nullptr };
 	};
 }

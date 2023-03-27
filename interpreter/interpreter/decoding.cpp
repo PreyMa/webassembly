@@ -3,6 +3,7 @@
 
 #include "module.h"
 #include "instruction.h"
+#include "introspection.h"
 #include "error.h"
 
 using namespace WASM;
@@ -10,6 +11,10 @@ using namespace WASM;
 void ModuleParser::parse(Buffer buffer, std::string modulePath)
 {
 	clear();
+	
+	if (introspector.has_value()) {
+		introspector->onModuleParsingStart();
+	}
 
 	path = std::move(modulePath);
 	data = std::move(buffer);
@@ -21,10 +26,8 @@ void ModuleParser::parse(Buffer buffer, std::string modulePath)
 		parseSection();
 	}
 
-	for (auto& f : functionCodes) {
-		std::cout << "=> Function:";
-		f.printBody(std::cout);
-		std::cout << std::endl;
+	if (introspector.has_value()) {
+		introspector->onModuleParsingFinished(functionCodes);
 	}
 }
 
@@ -173,7 +176,9 @@ void ModuleParser::parseSection()
 	case SectionType::Element: parseElementSection(); break;
 	case SectionType::Code: parseCodeSection(); break;
 	default:
-		std::cout << "Section type not recognized '" << type.name() << "'. skipping " << length << " bytes" << std::endl;
+		if (introspector.has_value()) {
+			introspector->onSkippingUnrecognizedSection(type, length);
+		}
 		it += length;
 	}
 
@@ -194,15 +199,15 @@ void ModuleParser::parseCustomSection(u32 length)
 	}
 
 	auto dataSlice = nextSliceTo( endPos );
+	if (introspector.has_value()) {
+		introspector->onParsingCustomSection(name, dataSlice);
+	}
 
-	std::cout << "-> Parsed custom section '" << name << "' containing " << dataSlice.size() << " bytes" << std::endl;
 	customSections.insert( std::make_pair(std::move(name), dataSlice) );
 }
 
 void ModuleParser::parseNameSection(BufferIterator endPos)
 {
-	std::cout << "-> Parsed custom section 'name'" << std::endl;
-
 	std::optional<NameSubsectionType> prevSectionType;
 
 	while (it < endPos) {
@@ -217,139 +222,113 @@ void ModuleParser::parseNameSection(BufferIterator endPos)
 		switch (type) {
 		case NameSubsectionType::ModuleName: {
 			mName = parseNameString();
-			std::cout << "  - Module name: " << mName << std::endl;
 			break;
 		}
 		case NameSubsectionType::FunctionNames: {
 			functionNames = parseNameMap();
-			std::cout << "  - Function names: " << std::endl;
-			for (auto& n : functionNames) {
-				std::cout << "    - " << n.first << " -> " << n.second << std::endl;
-			}
 			break;
 		}
 		case NameSubsectionType::LocalNames: {
 			functionLocalNames = parseIndirectNameMap();
-			std::cout << "  - Local names: " << std::endl;
-			for (auto& g : functionLocalNames) {
-				std::cout << "    - Group: " << g.first << std::endl;
-				for (auto& n : g.second) {
-					std::cout << "      - " << n.first << " -> " << n.second << std::endl;
-				}
-			}
 			break;
 		}
 		default:
-			std::cout << "  Name subsection type not recognized '" << type.name() << "'. skipping " << length << " bytes" << std::endl;
+			if (introspector.has_value()) {
+				introspector->onSkippingUnrecognizedNameSubsection(type, length);
+			}
 			it += length;
 		}
 
 		prevSectionType = type;
 		assert(it == oldPos + length);
 	}
+
+	if (introspector.has_value()) {
+		introspector->onParsingNameSection(mName, functionNames, functionLocalNames);
+	}
 }
 
 void ModuleParser::parseTypeSection()
 {
 	auto numFunctionTypes = nextU32();
-
-	std::cout << "-> Parsed type section containing " << numFunctionTypes << " function types" << std::endl;
-
 	functionTypes.reserve(functionTypes.size()+ numFunctionTypes);
 	for (u32 i = 0; i != numFunctionTypes; i++) {
 		auto functionType = parseFunctionType();
-
-		std::cout << "  - " << i << " ";
-		functionType.print(std::cout);
-		std::cout << std::endl;
-
 		functionTypes.emplace_back( std::move(functionType) );
+	}
+
+	if (introspector.has_value()) {
+		introspector->onParsingTypeSection(functionTypes);
 	}
 }
 
 void ModuleParser::parseFunctionSection()
 {
 	auto numFunctions = nextU32();
-
-	std::cout << "-> Parsed function section containing " << numFunctions << " functions" << std::endl;
-
 	functions.reserve(functions.size() + numFunctions);
 	for (u32 i = 0; i != numFunctions; i++) {
 		auto typeIdx = nextU32();
 		functions.push_back( typeIdx );
-		std::cout << "  - " << typeIdx << std::endl;
+	}
+
+	if (introspector.has_value()) {
+		introspector->onParsingFunctionSection(functions);
 	}
 }
 
 void ModuleParser::parseTableSection()
 {
 	auto numTables = nextU32();
-
-	std::cout << "-> Parsed table section containing " << numTables << " tables" << std::endl;
-
 	tableTypes.reserve(tableTypes.size() + numTables);
 	for (u32 i = 0; i != numTables; i++) {
 		auto tableType = parseTableType();
-
-		std::cout << "  - ";
-		tableType.print(std::cout);
-		std::cout << std::endl;
-
 		tableTypes.emplace_back( std::move(tableType) );
+	}
+
+	if (introspector.has_value()) {
+		introspector->onParsingTableSection(tableTypes);
 	}
 }
 
 void ModuleParser::parseMemorySection()
 {
 	auto numMemories = nextU32();
-
-	std::cout << "-> Parsed memory section containing " << numMemories << " memories" << std::endl;
-
 	memoryTypes.reserve(memoryTypes.size() + numMemories);
 	for (u32 i = 0; i != numMemories; i++) {
 		auto memoryType = parseMemoryType();
-
-		std::cout << "  - ";
-		memoryType.print(std::cout);
-		std::cout << std::endl;
-
 		memoryTypes.emplace_back(std::move(memoryType));
+	}
+
+	if (introspector.has_value()) {
+		introspector->onParsingMemorySection(memoryTypes);
 	}
 }
 
 void ModuleParser::parseGlobalSection()
 {
 	auto numGlobals = nextU32();
-	
-	std::cout << "-> Parsed global section containing " << numGlobals << " globals" << std::endl;
-
 	globals.reserve(globals.size() + numGlobals);
 	for (u32 i = 0; i != numGlobals; i++) {
 		auto global = parseGlobal();
-
-		std::cout << "  - ";
-		global.print(std::cout);
-		std::cout << std::endl;
-
 		globals.emplace_back(std::move(global));
+	}
+
+	if (introspector.has_value()) {
+		introspector->onParsingGlobalSection(globals);
 	}
 }
 
 void ModuleParser::parseExportSection()
 {
 	auto numExports = nextU32();
-
-	std::cout << "-> Parsed export section containing " << numExports << " exports" << std::endl;
-
 	exports.reserve(exports.size() + numExports);
 	for (u32 i = 0; i != numExports; i++) {
 		auto exp = parseExport();
-
-		std::cout << "  - ";
-		exp.print(std::cout);
-		std::cout << std::endl;
-
 		exports.emplace_back(std::move(exp));
+	}
+
+	if (introspector.has_value()) {
+		introspector->onParsingExportSection(exports);
 	}
 }
 
@@ -358,57 +337,46 @@ void ModuleParser::parseStartSection()
 	auto startFunctionIndex = nextU32();
 	startFunction.emplace(startFunctionIndex);
 
-	std::cout << "-> Parsed start section containing start function index " << startFunctionIndex << std::endl;
+	if (introspector.has_value()) {
+		introspector->onParsingStrartSection(startFunctionIndex);
+	}
 }
 
 void ModuleParser::parseElementSection()
 {
 	auto numElements = nextU32();
-
-	std::cout << "-> Parsed element section containing " << numElements << " elements" << std::endl;
-
 	elements.reserve(elements.size() + numElements);
 	for (u32 i = 0; i != numElements; i++) {
 		auto element = parseElement();
-
-		std::cout << "  - ";
-		element.print(std::cout);
-		std::cout << std::endl;
-
 		elements.emplace_back(std::move(element));
+	}
+
+	if (introspector.has_value()) {
+		introspector->onParsingElementSection(elements);
 	}
 }
 
 void ModuleParser::parseCodeSection()
 {
 	auto numFunctionCodes = nextU32();
-
-	std::cout << "-> Parsed code section containing " << numFunctionCodes << " function code items" << std::endl;
-
 	functionCodes.reserve(functionCodes.size() + numFunctionCodes);
 	for (u32 i = 0; i != numFunctionCodes; i++) {
 		auto code= parseFunctionCode();
-
-		std::cout << "  - " << i << " ";
-		code.print(std::cout);
-		std::cout << std::endl;
-
 		functionCodes.emplace_back(std::move(code));
+	}
+
+	if (introspector.has_value()) {
+		introspector->onParsingCodeSection(functionCodes);
 	}
 }
 
 void ModuleParser::parseImportSection()
 {
 	auto numImports = nextU32();
-	
-	std::cout << "-> Parsed import section containing " << numImports << " import items" << std::endl;
-
 	for (u32 i = 0; i != numImports; i++) {
 		auto moduleName = parseNameString();
 		auto itemName = parseNameString();
-
 		auto importType = ImportType::fromInt(nextU8());
-		std::cout << "  - " << importType.name() << ": " << moduleName << " :: " << itemName << std::endl;
 
 		switch (importType) {
 		case ImportType::FunctionImport: {
@@ -434,6 +402,10 @@ void ModuleParser::parseImportSection()
 		default:
 			assert(false);
 		}
+	}
+
+	if (introspector.has_value()) {
+		introspector->onParsingImportSection(importedFunctions, importedTableTypes, importedMemoryTypes, importedGlobalTypes);
 	}
 }
 
@@ -992,6 +964,10 @@ void ModuleValidator::validate(const ParsingState& parser)
 {
 	parsingState = &parser;
 
+	if (introspector.has_value()) {
+		introspector->onModuleValidationStart();
+	}
+
 	// Under module context C
 
 	if (s().functions.size() != s().functionCodes.size()) {
@@ -1040,6 +1016,10 @@ void ModuleValidator::validate(const ParsingState& parser)
 
 	// TODO: Validate data segments
 
+	if (introspector.has_value()) {
+		introspector->onModuleValidationFinished();
+	}
+
 	parsingState = nullptr;
 }
 
@@ -1072,48 +1052,54 @@ void ModuleValidator::validateFunction(u32 funcNum)
 	// Validation of the actual function code happens in the compiler
 
 	auto& type = s().functionTypes[typeIdx];
-	std::cout << "Validated function " << funcNum << " with type ";
-	type.print(std::cout);
-	std::cout << std::endl;
+	if (introspector.has_value()) {
+		introspector->onValidatingFunction(s().importedFunctions.size()+ funcNum, type);
+	}
 }
 
-void ModuleValidator::validateTableType(const TableType& t)
+void ModuleValidator::validateTableType(const TableType& tableType)
 {
 	constexpr u32 tableRange = 0xFFFFFFFF;
-	if (!t.limits().isValid(tableRange)) {
+	if (!tableType.limits().isValid(tableRange)) {
 		throwValidationError("Invalid table limits definition");
 	}
 
-	std::cout << "Validated table type" << std::endl;
+	if (introspector.has_value()) {
+		introspector->onValidatingTableType(tableType);
+	}
 }
 
-void ModuleValidator::validateMemoryType(const MemoryType& m)
+void ModuleValidator::validateMemoryType(const MemoryType& memoryType)
 {
 	constexpr u32 memoryRange = 0xFFFF;
-	if (!m.limits().isValid(memoryRange)) {
+	if (!memoryType.limits().isValid(memoryRange)) {
 		throwValidationError("Invalid range limits definition");
 	}
 
-	std::cout << "Validated memory type" << std::endl;
+	if (introspector.has_value()) {
+		introspector->onValidatingMemoryType(memoryType);
+	}
 }
 
-void ModuleValidator::validateExport(const Export& e)
+void ModuleValidator::validateExport(const Export& exportItem)
 {
 	auto numFunctions = s().functions.size() + s().importedFunctions.size();
 	auto numTables = s().tableTypes.size() + s().importedTableTypes.size();
 	auto numMemories = s().memoryTypes.size() + s().importedMemoryTypes.size();
 	auto numGlobals = s().globals.size() + s().importedGlobalTypes.size();
-	if (!e.isValid(numFunctions, numTables, numMemories, numGlobals)) {
+	if (!exportItem.isValid(numFunctions, numTables, numMemories, numGlobals)) {
 		throwValidationError("Export references invalid index");
 	}
 
 	// Try insert the name and throw if it already exists
-	auto result= exportNames.emplace(e.name());
+	auto result= exportNames.emplace(exportItem.name());
 	if ( !result.second ) {
 		throwValidationError("Duplicate export name");
 	}
 
-	std::cout << "Validated export '" << e.name() << "'" << std::endl;
+	if (introspector.has_value()) {
+		introspector->onValidatingExport(exportItem);
+	}
 }
 
 void ModuleValidator::validateStartFunction(u32 idx)
@@ -1123,12 +1109,18 @@ void ModuleValidator::validateStartFunction(u32 idx)
 		throwValidationError("Start function has wrong type");
 	}
 
-	std::cout << "Validated start function" << std::endl;
+	if (introspector.has_value()) {
+		introspector->onValidatingStartFunction(idx);
+	}
 }
 
 void ModuleValidator::validateGlobal(const DeclaredGlobal& global)
 {
 	validateConstantExpression(global.initExpression(), global.valType());
+
+	if (introspector.has_value()) {
+		introspector->onValidatingGlobal(global);
+	}
 }
 
 void ModuleValidator::validateElementSegment(const Element& elem)
@@ -1165,12 +1157,17 @@ void ModuleValidator::validateElementSegment(const Element& elem)
 		validateConstantExpression(tablePos->tableOffset, ValType::I32);
 	}
 
-	std::cout << "Validated element segment" << std::endl;
+	if (introspector.has_value()) {
+		introspector->onValidatingElement(elem);
+	}
 }
 
 void ModuleValidator::validateImports()
 {
-	std::cout << "# Validate imports:" << std::endl;
+	if (introspector.has_value()) {
+		introspector->onModulImportsValidationStart();
+	}
+
 	// TODO: Validate function imports
 	
 	// Validate table imports
@@ -1184,7 +1181,10 @@ void ModuleValidator::validateImports()
 	}
 	
 	// Validate global imports -> global types are valid
-	std::cout << "# Done validating imports" << std::endl;
+
+	if (introspector.has_value()) {
+		introspector->onModulImportsValidationFinished();
+	}
 }
 
 void ModuleValidator::validateConstantExpression(const Expression& exp, ValType expectedType)
@@ -1211,8 +1211,6 @@ void ModuleValidator::validateConstantExpression(const Expression& exp, ValType 
 			throwValidationError("Init expression references invalid global index");
 		}
 	}
-
-	std::cout << "Validated global" << std::endl;
 }
 
 void ModuleValidator::throwValidationError(const char* msg) const

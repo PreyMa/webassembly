@@ -63,6 +63,9 @@ namespace WASM {
 	class Bytecode;
 	class BytecodeArguments;
 
+	class Introspector;
+	class DebugLogger;
+
 	class ModuleLinker;
 	class ModuleCompiler;
 
