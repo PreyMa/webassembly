@@ -54,14 +54,6 @@ Module ModuleParser::toModule()
 		functionTables.emplace_back(tableIdx, tableType);
 	}
 
-	std::vector<DecodedElement> decodedElements;
-	decodedElements.reserve(elements.size());
-
-	for (u32 i = 0; i != elements.size(); i++) {
-		decodedElements.emplace_back(elements[i].decode(i));
-		// decodedElements.back().initTableIfActive( functionTables );
-	}
-
 	std::optional<Memory> memoryInstance;
 	if (!memoryTypes.empty()) {
 		memoryInstance.emplace(0, memoryTypes[0].limits());
@@ -119,6 +111,7 @@ Module ModuleParser::toModule()
 		std::move(globals),
 		std::move(globals32bit),
 		std::move(globals64bit),
+		std::move(elements),
 		// Imports
 		std::move(importedFunctions),
 		std::move(importedTableTypes),
@@ -334,11 +327,11 @@ void ModuleParser::parseExportSection()
 
 void ModuleParser::parseStartSection()
 {
-	auto startFunctionIndex = nextU32();
-	startFunction.emplace(startFunctionIndex);
+	auto idx = nextU32();
+	startFunctionIndex.emplace(idx);
 
 	if (introspector.has_value()) {
-		introspector->onParsingStrartSection(startFunctionIndex);
+		introspector->onParsingStrartSection(idx);
 	}
 }
 
@@ -881,25 +874,39 @@ void Element::print(std::ostream& out) const
 	}
 }
 
-DecodedElement Element::decode(u32 index)
+LinkedElement Element::decodeAndLink(u32 index, Module& module)
 {
-	std::vector<u32> functionIndices;
+	u32 tableOffset = mTablePosition.has_value() ? mTablePosition->tableOffset.constantI32() : 0;
+	if (mMode == ElementMode::Passive) {
+		return { index, mMode, refType, tableIndex(), tableOffset };
+	}
+
+	std::vector<Nullable<Function>> functionPointers;
+	auto appendFunction = [&](u32 functionIdx) {
+		auto function= module.functionByIndex(functionIdx);
+		assert(function.has_value()); // FIXME: Throw instead
+		functionPointers.emplace_back(function);
+	};
+
 	if (mInitExpressions.index() == 1) {
-		auto& expressions = std::get<1>(mInitExpressions);
-		functionIndices.reserve(expressions.size());
-		for (auto& expr : expressions) {
+		auto& expressionVector = std::get<1>(mInitExpressions);
+		functionPointers.reserve(expressionVector.size());
+		for (auto& expr : expressionVector) {
 			// Do not allow null references
+			// FIXME: Throw instead
 			auto funcIndex = expr.constantFuncRefAsIndex();
 			assert(funcIndex.has_value());
 
-			functionIndices.emplace_back(*funcIndex);
+			appendFunction(*funcIndex);
 		}
 	}
 	else {
-		functionIndices = std::move(std::get<0>(mInitExpressions));
+		auto& indexVector = std::get<0>(mInitExpressions);
+		functionPointers.reserve(indexVector.size());
+		for (auto idx : indexVector) {
+			appendFunction(idx);
+		}
 	}
-
-	auto tableOffset = mTablePosition.has_value() ? mTablePosition->tableOffset.constantI32() : 0;
 
 	return {
 		index,
@@ -907,7 +914,7 @@ DecodedElement Element::decode(u32 index)
 		refType,
 		tableIndex(),
 		(u32)tableOffset,
-		std::move(functionIndices)
+		std::move(functionPointers)
 	};
 }
 
@@ -982,8 +989,8 @@ void ModuleValidator::validate(const ParsingState& parser)
 		validateFunction(i);
 	}
 
-	if (s().startFunction.has_value()) {
-		validateStartFunction(*s().startFunction);
+	if (s().startFunctionIndex.has_value()) {
+		validateStartFunction(*s().startFunctionIndex);
 	}
 
 	validateImports();
@@ -1230,7 +1237,7 @@ void ParsingState::clear()
 	memoryTypes.clear();
 	globals.clear();
 	exports.clear();
-	startFunction.reset();
+	startFunctionIndex.reset();
 	elements.clear();
 	functionCodes.clear();
 	importedFunctions.clear();

@@ -56,6 +56,8 @@ void Interpreter::compileAndLinkModules()
 	}
 
 	for (auto& module : modules) {
+		module.initTables(Nullable<Introspector>::fromPointer(attachedIntrospector));
+
 		ModuleCompiler compiler{ *this, module };
 		compiler.compile();
 	}

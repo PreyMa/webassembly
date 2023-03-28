@@ -42,6 +42,8 @@ namespace WASM {
 		virtual void onValidatingStartFunction(u32) = 0;
 		virtual void onValidatingGlobal(const DeclaredGlobal&) = 0;
 		virtual void onValidatingElement(const Element&) = 0;
+
+		virtual void onModuleTableInitialized(const Module&, sizeType, sizeType) = 0;
 	};
 
 	class DebugLogger : public Introspector {
@@ -74,6 +76,8 @@ namespace WASM {
 		virtual void onValidatingStartFunction(u32) override;
 		virtual void onValidatingGlobal(const DeclaredGlobal&) override;
 		virtual void onValidatingElement(const Element&) override;
+
+		virtual void onModuleTableInitialized(const Module&, sizeType, sizeType) override;
 
 	protected:
 		virtual std::ostream& outStream() = 0;

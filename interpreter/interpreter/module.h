@@ -64,7 +64,7 @@ namespace WASM {
 
 		i32 grow(i32, Nullable<Function>);
 
-		void init(const DecodedElement&, u32, u32);
+		void init(const LinkedElement&, u32, u32, u32);
 
 	private:
 		u32 index;
@@ -73,12 +73,19 @@ namespace WASM {
 		std::vector<Nullable<Function>> table;
 	};
 
-	class DecodedElement {
+	class LinkedElement {
 	public:
-		DecodedElement(u32 idx, ElementMode m, ValType t, u32 i, u32 o, std::vector<u32> f)
-			: index{ idx }, mMode{ m }, refType{ t }, tableIndex{ i }, tableOffset{ o }, mFunctionIndices{ std::move(f) } {}
+		LinkedElement(u32 idx, ElementMode m, ValType t, u32 i, u32 o, std::vector<Nullable<Function>> f)
+			: index{ idx }, mMode{ m }, refType{ t }, tableIndex{ i }, tableOffset{ o }, mFunctions{ std::move(f) } {}
 
-		void initTableIfActive(std::vector<FunctionTable>&);
+		LinkedElement(u32 idx, ElementMode m, ValType t, u32 i, u32 o)
+			: index{ idx }, mMode{ m }, refType{ t }, tableIndex{ i }, tableOffset{ o } {
+			assert(mMode == ElementMode::Passive);
+		}
+
+		sizeType initTableIfActive(std::vector<FunctionTable>&);
+
+		const std::vector<Nullable<Function>>& references() const { return mFunctions; }
 
 	private:
 		u32 index;
@@ -86,7 +93,7 @@ namespace WASM {
 		ValType refType;
 		u32 tableIndex;
 		u32 tableOffset;
-		std::vector<u32> mFunctionIndices;
+		std::vector<Nullable<Function>> mFunctions;
 	};
 
 	class Memory {
@@ -144,6 +151,7 @@ namespace WASM {
 			std::vector<DeclaredGlobal> gt,
 			std::vector<Global<u32>> g64,
 			std::vector<Global<u64>> g32,
+			std::vector<Element> el,
 			std::vector<FunctionImport> imFs,
 			std::vector<TableImport> imTs,
 			std::optional<MemoryImport> imMs,
@@ -154,6 +162,7 @@ namespace WASM {
 
 		const std::string& name() const { return mName; }
 		bool needsLinking() const { return compilationData != nullptr; }
+		void initTables(Nullable<Introspector>);
 
 		Nullable<Function> functionByIndex(u32);
 		std::optional<ResolvedGlobal> globalByIndex(u32);
@@ -173,6 +182,7 @@ namespace WASM {
 			std::optional<MemoryImport> importedMemory;
 			std::vector<GlobalImport> importedGlobals;
 			std::vector<DeclaredGlobal> globalTypes;
+			std::vector<Element> elements;
 		};
 
 		std::string path;
@@ -185,6 +195,9 @@ namespace WASM {
 		std::optional<Memory> ownedMemoryInstance;
 		std::vector<Global<u32>> globals32;
 		std::vector<Global<u64>> globals64;
+		std::vector<LinkedElement> elements;
+
+		u32 numRemainingElements{ 0 };
 
 		std::unique_ptr<CompilationData> compilationData;
 		ExportTable exports;

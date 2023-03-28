@@ -328,6 +328,12 @@ void DebugLogger::onValidatingElement(const Element& element)
 	}
 }
 
+void WASM::DebugLogger::onModuleTableInitialized(const Module& module, sizeType numElements, sizeType numFunctions)
+{
+	outStream() << "Initalized tables in module '" << module.name() << "'. " << numFunctions <<
+		" function entries initialized by " << numElements << " active element segments" << std::endl;
+}
+
 std::ostream& WASM::ConsoleLogger::outStream()
 {
 	return stream;

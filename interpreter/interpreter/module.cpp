@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include "interpreter.h"
+#include "introspection.h"
 #include "error.h"
 
 using namespace WASM;
@@ -131,21 +132,34 @@ i32 FunctionTable::grow(i32 increase, Nullable<Function> item)
 	}
 }
 
-void FunctionTable::init(const DecodedElement& element, u32 tableOffset, u32 elementOffset)
+void FunctionTable::init(const LinkedElement& element, u32 tableOffset, u32 elementOffset, u32 numItems)
 {
-	// This has to be done during the linking step
-	assert(false);
-}
-
-
-void DecodedElement::initTableIfActive(std::vector<FunctionTable>& tables)
-{
-	if (mMode != ElementMode::Active) {
+	if (!numItems) {
 		return;
 	}
 
+	auto& refs = element.references();
+	assert(elementOffset + numItems < refs.size());
+	auto readIt = refs.begin() + elementOffset;
+
+	assert(tableOffset + numItems < table.size());
+	auto writeIt = table.begin() + tableOffset;
+
+	for (u32 i = 0; i != numItems; i++) {
+		*(writeIt++) = *(readIt++);
+	}
+}
+
+
+sizeType LinkedElement::initTableIfActive(std::vector<FunctionTable>& tables)
+{
+	if (mMode != ElementMode::Active) {
+		return 0;
+	}
+
 	assert(tableIndex < tables.size());
-	tables[tableIndex].init(*this, tableOffset, 0);
+	tables[tableIndex].init(*this, tableOffset, 0, mFunctions.size());
+	return mFunctions.size();
 }
 
 Memory::Memory(u32 idx, Limits l)
@@ -198,6 +212,7 @@ Module::Module(
 	std::vector<DeclaredGlobal> gt,
 	std::vector<Global<u32>> g32,
 	std::vector<Global<u64>> g64,
+	std::vector<Element> el,
 	std::vector<FunctionImport> imFs,
 	std::vector<TableImport> imTs,
 	std::optional<MemoryImport> imMs,
@@ -219,7 +234,8 @@ Module::Module(
 			std::move(imTs),
 			std::move(imMs),
 			std::move(imGs),
-			std::move(gt)
+			std::move(gt),
+			std::move(el)
 		)
 	},
 	exports{ std::move(ex) },
@@ -232,6 +248,37 @@ Module::Module(
 	numImportedGlobals = compilationData->importedGlobals.size();
 }
 
+
+void Module::initTables(Nullable<Introspector> introspector)
+{
+	assert(compilationData);
+
+	std::vector<LinkedElement> linkedElements;
+	linkedElements.reserve(elements.size());
+
+	sizeType numFunctions = 0;
+	sizeType numElements = 0;
+	numRemainingElements = 0;
+	for (u32 i = 0; i != compilationData->elements.size(); i++) {
+		auto& unlinkedElement = compilationData->elements[i];
+		if (unlinkedElement.mode() != ElementMode::Passive) {
+			numRemainingElements++;
+		}
+
+
+		linkedElements.emplace_back(unlinkedElement.decodeAndLink(i, *this));
+		auto initCount= linkedElements.back().initTableIfActive( functionTables );
+
+		if (initCount > 0) {
+			numFunctions += initCount;
+			numElements++;
+		}
+	}
+
+	if (introspector.has_value()) {
+		introspector->onModuleTableInitialized(*this, numElements, numFunctions);
+	}
+}
 
 Nullable<Function> Module::functionByIndex(u32 idx)
 {

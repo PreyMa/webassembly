@@ -189,7 +189,7 @@ namespace WASM {
 		Nullable<const std::vector<Expression>> initExpressions() const;
 
 		void print(std::ostream& out) const;
-		DecodedElement decode(u32);
+		LinkedElement decodeAndLink(u32, Module&);
 
 	private:
 		ElementMode mMode;
