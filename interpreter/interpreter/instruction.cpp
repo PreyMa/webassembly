@@ -1918,10 +1918,11 @@ std::optional<Bytecode> Instruction::toBytecode() const
 		case IT::DataDrop: return BA::DataDrop;
 		case IT::MemoryCopy: return BA::MemoryCopy;
 		case IT::MemoryFill: return BA::MemoryFill;
-		case IT::I32Const: return BA::I32Const;
-		case IT::I64Const: return BA::I64Const;
-		case IT::F32Const: return BA::F32Const;
-		case IT::F64Const: return BA::F64Const;
+		case IT::I32Const:
+		case IT::I64Const:
+			return {};
+		case IT::F32Const: return BA::I32ConstLong;
+		case IT::F64Const: return BA::I64ConstLong;
 		case IT::I32EqualZero: return BA::I32EqualZero;
 		case IT::I32Equal: return BA::I32Equal;
 		case IT::I32NotEqual: return BA::I32NotEqual;
@@ -2123,6 +2124,10 @@ u32 Instruction::maxPrintedByteLength(const BufferSlice& data) const
 	case IT::F32ReinterpretI32:
 	case IT::F64ReinterpretI64:
 		return 0;
+	case IT::I32Const:
+		return 5;
+	case IT::I64Const:
+		return 9;
 	default: assert(false);
 	}
 }

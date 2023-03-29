@@ -1062,19 +1062,41 @@ void ModuleCompiler::compileNumericConstantInstruction(Instruction instruction)
 	pushValue(*resultType);
 
 	if (isReachable()) {
-		auto bytecode = instruction.toBytecode();
-		assert(bytecode.has_value());
-		print(*bytecode);
-
-		auto args = bytecode->arguments();
-		if (args == BytecodeArguments::SingleU32) {
+		switch (opCode) {
+		case InstructionType::I32Const: {
+			auto value = instruction.asIF32Constant();
+			if (value < 256) {
+				print(Bytecode::I32ConstShort);
+				printU8(value);
+			}
+			else {
+				print(Bytecode::I32ConstLong);
+				printU32(value);
+			}
+			break;
+		}
+		case InstructionType::I64Const: {
+			auto value = instruction.asIF64Constant();
+			if (value < 256) {
+				print(Bytecode::I64ConstShort);
+				printU8(value);
+			}
+			else {
+				print(Bytecode::I64ConstLong);
+				printU64(value);
+			}
+			break;
+		}
+		case InstructionType::F32Const:
+			print(Bytecode::I32ConstLong);
 			printU32(instruction.asIF32Constant());
-		}
-		else if (args == BytecodeArguments::SingleU64) {
+			break;
+		case InstructionType::F64Const:
+			print(Bytecode::I64ConstLong);
 			printU64(instruction.asIF64Constant());
-		}
-		else {
-			throwCompilationError("Bytecode requires unexpected arguments");
+			break;
+		default:
+			throwCompilationError("Unknown numeric constant instruction");
 		}
 	}
 }
@@ -1274,14 +1296,6 @@ void ModuleCompiler::compileBranchTableInstruction(Instruction instruction)
 void ModuleCompiler::compileInstruction(Instruction instruction, u32 instructionCounter)
 {
 	auto opCode = instruction.opCode();
-	if (opCode.isConstant()
-		&& opCode != InstructionType::GlobalGet
-		&& opCode != InstructionType::ReferenceFunction
-		) {
-		compileNumericConstantInstruction(instruction);
-		return;
-	}
-
 	if (opCode.isUnary()) {
 		compileNumericUnaryInstruction(instruction);
 		return;
@@ -1499,7 +1513,7 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 		auto& funcType = function->functionType();
 		popValues(funcType.parameters());
 		pushValues(funcType.results());
-		
+
 		auto bytecodeFunction = function->asBytecodeFunction();
 		if (bytecodeFunction.has_value()) {
 			// FIXME: Print the pointer to the actual bytecode instead?
@@ -1515,7 +1529,7 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 			print(Bytecode::CallHost);
 			printPointer(hostFunction.pointer());
 		}
-		
+
 		return;
 	}
 
@@ -1537,8 +1551,8 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 
 	case IT::Select: {
 		popValue(ValType::I32);
-		auto firstType= popValue();
-		auto secondType= popValue();
+		auto firstType = popValue();
+		auto secondType = popValue();
 
 		auto isNum = [](ValueRecord record) {
 			// Empty is also a number, so just use I32 as a placeholder
@@ -1642,7 +1656,7 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 	case IT::ReferenceNull:
 		pushValue(ValType::FuncRef);
 		if (isReachable()) {
-			print(Bytecode::I64Const);
+			print(Bytecode::I64ConstLong);
 			printU64(0x00);
 		}
 		return;
@@ -1657,13 +1671,13 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 
 	case IT::ReferenceFunction: {
 		pushValue(ValType::FuncRef);
-		auto function = module.functionByIndex( instruction.functionIndex() );
+		auto function = module.functionByIndex(instruction.functionIndex());
 		if (!function.has_value()) {
 			throwCompilationError("ReferenceFunction instruction reference invalid function index");
 		}
 		if (isReachable()) {
 			// FIXME: Put the actual bytecode address instead of the function instance?
-			print(Bytecode::I64Const);
+			print(Bytecode::I64ConstLong);
 			printPointer(function.pointer());
 		}
 		return;
@@ -1676,6 +1690,13 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 	case IT::MemoryInit:
 	case IT::DataDrop:
 		compileMemoryControlInstruction(instruction);
+		return;
+
+	case IT::I32Const:
+	case IT::I64Const:
+	case IT::F32Const:
+	case IT::F64Const:
+		compileNumericConstantInstruction(instruction);
 		return;
 	}
 

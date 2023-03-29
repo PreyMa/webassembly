@@ -215,10 +215,10 @@ const char* Bytecode::name() const {
 		case DataDrop: return "DataDrop";
 		case MemoryCopy: return "MemoryCopy";
 		case MemoryFill: return "MemoryFill";
-		case I32Const: return "I32Const";
-		case I64Const: return "I64Const";
-		case F32Const: return "F32Const";
-		case F64Const: return "F64Const";
+		case I32ConstShort: return "I32ConstShort";
+		case I32ConstLong: return "I32ConstLong";
+		case I64ConstShort: return "I64ConstShort";
+		case I64ConstLong: return "I64ConstLong";
 		case I32EqualZero: return "I32EqualZero";
 		case I32Equal: return "I32Equal";
 		case I32NotEqual: return "I32NotEqual";
@@ -442,10 +442,10 @@ BytecodeArguments Bytecode::arguments() const
 	case DataDrop:
 	case MemoryInit:
 		return BA::SingleU32;
-	case I32Const: return BA::SingleU32;
-	case I64Const: return BA::SingleU64;
-	case F32Const: return BA::SingleU32;
-	case F64Const: return BA::SingleU64;
+	case I32ConstShort: return BA::SingleU8;
+	case I32ConstLong: return BA::SingleU32;
+	case I64ConstShort: return BA::SingleU8;
+	case I64ConstLong: return BA::SingleU64;
 	case I32EqualZero:
 	case I32Equal:
 	case I32NotEqual:
