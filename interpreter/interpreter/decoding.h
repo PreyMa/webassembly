@@ -31,7 +31,7 @@ namespace WASM {
 
 		i32 constantI32() const;
 		std::optional<u32> constantFuncRefAsIndex() const;
-		u64 constantUntypedValue() const;
+		u64 constantUntypedValue(Module&) const;
 
 	private:
 		BufferSlice mBytes;

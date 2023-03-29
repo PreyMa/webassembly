@@ -126,6 +126,8 @@ namespace WASM {
 			return *(U*)(&storage);
 		}
 
+		void set(T val) { storage = val; }
+
 	private:
 		T storage{ 0 };
 	};
@@ -163,6 +165,7 @@ namespace WASM {
 		const std::string& name() const { return mName; }
 		bool needsLinking() const { return compilationData != nullptr; }
 		void initTables(Nullable<Introspector>);
+		void initGlobals(Nullable<Introspector>);
 
 		Nullable<Function> functionByIndex(u32);
 		std::optional<ResolvedGlobal> globalByIndex(u32);

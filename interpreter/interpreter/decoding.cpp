@@ -960,10 +960,30 @@ std::optional<u32> Expression::constantFuncRefAsIndex() const
 	return mInstructions.front().asReferenceIndex();
 }
 
-u64 Expression::constantUntypedValue() const
+u64 Expression::constantUntypedValue(Module& module) const
 {
 	assert(mInstructions.size() > 0);
-	assert(false);
+
+	auto& instruction = mInstructions.front();
+	assert(instruction.isConstant());
+
+	switch (instruction.opCode()) {
+	case InstructionType::I32Const:
+	case InstructionType::F32Const:
+		return instruction.asIF32Constant();
+	case InstructionType::I64Const:
+	case InstructionType::F64Const:
+		return instruction.asIF64Constant();
+	case InstructionType::ReferenceNull:
+		return 0;
+	case InstructionType::ReferenceFunction: {
+		auto function= module.functionByIndex(instruction.functionIndex());
+		assert(function.has_value());
+		return (u64)function.pointer();
+	}
+	case InstructionType::GlobalGet:
+		assert(false); // Not yet supported
+	}
 	return 0;
 }
 

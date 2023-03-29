@@ -280,6 +280,30 @@ void Module::initTables(Nullable<Introspector> introspector)
 	}
 }
 
+void Module::initGlobals(Nullable<Introspector> introspector)
+{
+	assert(compilationData);
+
+	for (auto& declaredGlobal : compilationData->globalTypes) {
+		auto size = declaredGlobal.valType().sizeInBytes();
+		auto typedIdx = declaredGlobal.indexInTypedStorageArray();
+		assert(size == 4 || size == 8);
+		assert(typedIdx.has_value());
+		auto initValue = declaredGlobal.initExpression().constantUntypedValue(*this);
+		
+		if (size == 4) {
+			globals32[*typedIdx].set(initValue);
+		}
+		else  {
+			globals64[*typedIdx].set(initValue);
+		}
+	}
+
+	if (introspector.has_value()) {
+		// introspector->onModuleTableInitialized(*this, numElements, numFunctions);
+	}
+}
+
 Nullable<Function> Module::functionByIndex(u32 idx)
 {
 	if (idx < numImportedFunctions) {
