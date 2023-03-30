@@ -11,4 +11,7 @@ else()
   set_property(TARGET interpreter PROPERTY CXX_STANDARD 17)
 endif()
 
+# Generate asm files
+# set_target_properties(interpreter PROPERTIES COMPILE_FLAGS "/FAs") 
+
 # TODO: Add tests and install targets if needed.

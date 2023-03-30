@@ -41,9 +41,9 @@ u32 BytecodeFunction::operandStackSectionOffsetInBytes() const
 	auto& lastLocal = uncompressedLocals.back();
 	auto byteOffset= lastLocal.offset + lastLocal.type.sizeInBytes();
 
-	// Manually add the size of FP + SP+ MP, if there are only parameters
+	// Manually add the size of RA + FP + SP + MP, if there are only parameters
 	if (!hasLocals()) {
-		byteOffset += 24;
+		byteOffset += 32;
 	}
 
 	return byteOffset;
@@ -95,8 +95,8 @@ void BytecodeFunction::uncompressLocalTypes(const std::vector<CompressedLocalTyp
 		byteOffset += param.sizeInBytes();
 	}
 
-	// Leave space for stack, frame and module pointer
-	byteOffset += 24;
+	// Leave space for return address, stack, frame and module pointer
+	byteOffset += 32;
 
 	// Decompress and put each local
 	for (auto& pack : compressedLocals) {
@@ -200,6 +200,11 @@ std::optional<u64> Memory::maxBytes() const {
 	return {};
 }
 
+sizeType Memory::currentSize() const
+{
+	return data.size() / PageSize;
+}
+
 Module::Module(
 	Buffer b,
 	std::string p,
@@ -213,6 +218,7 @@ Module::Module(
 	std::vector<Global<u32>> g32,
 	std::vector<Global<u64>> g64,
 	std::vector<Element> el,
+	std::optional<u32> sf,
 	std::vector<FunctionImport> imFs,
 	std::vector<TableImport> imTs,
 	std::optional<MemoryImport> imMs,
@@ -235,7 +241,8 @@ Module::Module(
 			std::move(imMs),
 			std::move(imGs),
 			std::move(gt),
-			std::move(el)
+			std::move(el),
+			std::move(sf)
 		)
 	},
 	exports{ std::move(ex) },
@@ -435,6 +442,17 @@ void ModuleLinker::link()
 	std::cout << std::endl;
 
 	modules[0].compilationData->importedFunctions[0].resolvedFunction = abortFunction;
+
+	assert(modules.size() == 1);
+	assert(modules[0].compilationData);
+	if (modules[0].compilationData->startFunctionIndex.has_value()) {
+		assert(modules[0].compilationData->startFunctionIndex >= modules[0].numImportedFunctions);
+		assert(*modules[0].compilationData->startFunctionIndex- modules[0].numImportedFunctions < modules[0].functions.size());
+		modules[0].mStartFunction = modules[0].functions[*modules[0].compilationData->startFunctionIndex- modules[0].numImportedFunctions];
+	}
+
+	assert(!modules[0].compilationData->importedMemory.has_value());
+	modules[0].linkedMemory = *modules[0].ownedMemoryInstance;
 }
 
 
@@ -551,8 +569,9 @@ void ModuleCompiler::compileFunction(BytecodeFunction& function)
 	}
 
 	assert(maxStackHeightInBytes % 4 == 0);
+	maxStackHeightInBytes += localsSizeInBytes;
 	function.setMaxStackHeight(maxStackHeightInBytes / 4);
-	
+
 	auto modName = module.name();
 	if (modName.size() > 20) {
 		modName = "..." + modName.substr(modName.size() - 17);
@@ -562,6 +581,9 @@ void ModuleCompiler::compileFunction(BytecodeFunction& function)
 	auto* functionName = maybeFunctionName.has_value() ? maybeFunctionName->c_str() : "<unknown name>";
 	std::cout << "Compiled function " << modName << " :: " << functionName << " (index " << function.index() << ")" << " (max stack height " << maxStackHeightInBytes/4 << " slots)" << std::endl;
 	printBytecode(std::cout);
+
+
+	function.setBytecode(std::move(printedBytecode));
 }
 
 void ModuleCompiler::pushValue(ValType type)
@@ -976,44 +998,44 @@ void ModuleCompiler::resetBytecodePrinter()
 
 void ModuleCompiler::print(Bytecode c)
 {
-	std::cout << "  Printed at " << printedBytecode.size() << " bytecode: " << c.name() << std::endl;
+	//std::cout << "  Printed at " << printedBytecode.size() << " bytecode: " << c.name() << std::endl;
 	printedBytecode.appendU8(c);
 }
 
 void ModuleCompiler::printU8(u8 x)
 {
-	std::cout << "  Printed at " << printedBytecode.size() << " u8: " << (int) x << std::endl;
+	//std::cout << "  Printed at " << printedBytecode.size() << " u8: " << (int) x << std::endl;
 	printedBytecode.appendU8(x);
 }
 
 void ModuleCompiler::printU32(u32 x)
 {
-	std::cout << "  Printed at " << printedBytecode.size() << " u32: " << x << std::endl;
+	//std::cout << "  Printed at " << printedBytecode.size() << " u32: " << x << std::endl;
 	printedBytecode.appendLittleEndianU32(x);
 }
 
 void ModuleCompiler::printU64(u64 x)
 {
-	std::cout << "  Printed at " << printedBytecode.size() << " u64: " << x << std::endl;
+	//std::cout << "  Printed at " << printedBytecode.size() << " u64: " << x << std::endl;
 	printedBytecode.appendLittleEndianU64(x);
 }
 
 void ModuleCompiler::printF32(f32 f)
 {
-	std::cout << "  Printed at " << printedBytecode.size() << " f32: " << f << " as " << reinterpret_cast<u32&>(f) << std::endl;
+	//std::cout << "  Printed at " << printedBytecode.size() << " f32: " << f << " as " << reinterpret_cast<u32&>(f) << std::endl;
 	printedBytecode.appendLittleEndianU32(reinterpret_cast<u32&>(f));
 }
 
 void ModuleCompiler::printF64(f64 f)
 {
-	std::cout << "  Printed at " << printedBytecode.size() << " f64: " << f << " as " << reinterpret_cast<u64&>(f) << std::endl;
+	//std::cout << "  Printed at " << printedBytecode.size() << " f64: " << f << " as " << reinterpret_cast<u64&>(f) << std::endl;
 	printedBytecode.appendLittleEndianU32(reinterpret_cast<u64&>(f));
 }
 
 void ModuleCompiler::printPointer(const void* p)
 {
+	//std::cout << "  Printed pointer: " << reinterpret_cast<u64&>(p) << std::endl;
 	printedBytecode.appendLittleEndianU64(reinterpret_cast<u64&>(p));
-	std::cout << "  Printed pointer: " << reinterpret_cast<u64&>(p) << std::endl;
 }
 
 void ModuleCompiler::printBytecodeExpectingNoArgumentsIfReachable(Instruction instruction)
@@ -1048,7 +1070,7 @@ void ModuleCompiler::printLocalGetSetTeeBytecodeIfReachable(
 	u32 operandOffsetInBytes = currentFunction->operandStackSectionOffsetInBytes();
 	assert(operandOffsetInBytes % 4 == 0);
 
-	// Full stack size = current operand stack + function parameter section + FP + SP + function locals
+	// Full stack size = current operand stack + function parameter section + RA + FP + SP + MP + function locals
 	u32 fullStackHeightInSlots = (stackHeightInBytes / 4) + (operandOffsetInBytes / 4);
 	u32 localSlotOffset= local.offset / 4;
 	u32 distance = fullStackHeightInSlots - localSlotOffset;
@@ -1540,10 +1562,13 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 
 		auto bytecodeFunction = function->asBytecodeFunction();
 		if (bytecodeFunction.has_value()) {
+			auto parameterBytes = funcType.parameterStackSectionSizeInBytes();
+			assert(parameterBytes % 4 == 0);
+
 			// FIXME: Print the pointer to the actual bytecode instead?
 			print(Bytecode::Call);
 			printPointer(bytecodeFunction.pointer());
-			printU32(funcType.parameterStackSectionSizeInBytes());
+			printU32(parameterBytes / 4);
 
 		}
 		else {

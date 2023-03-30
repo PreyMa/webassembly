@@ -36,8 +36,11 @@ namespace WASM {
 		u32 typeIndex() const { return mTypeIndex; }
 		const Expression& expression() const { return code; }
 		virtual const FunctionType& functionType() const override { return type; }
+
 		u32 maxStackHeight() const { return mMaxStackHeight; }
 		void setMaxStackHeight(u32 h) { mMaxStackHeight = h; }
+		const Buffer& bytecode() const { return mBytecode; }
+		void setBytecode(Buffer b) { mBytecode = std::move(b); }
 
 		std::optional<LocalOffset> localByIndex(u32) const;
 		bool hasLocals() const;
@@ -56,6 +59,7 @@ namespace WASM {
 		Expression code;
 		std::vector<LocalOffset> uncompressedLocals;
 		u32 mMaxStackHeight{ 0 };
+		Buffer mBytecode;
 	};
 
 	class FunctionTable {
@@ -106,6 +110,14 @@ namespace WASM {
 
 		u64 minBytes() const;
 		std::optional<u64> maxBytes() const;
+		sizeType currentSize() const;
+
+		__forceinline u8* pointer(u32 idx) {
+			if (idx > data.size()) {
+				throw std::runtime_error{ "Out of bounds memory access" };
+			}
+			return data.data()+ idx;
+		}
 
 	private:
 		u32 index;
@@ -154,6 +166,7 @@ namespace WASM {
 			std::vector<Global<u32>> g64,
 			std::vector<Global<u64>> g32,
 			std::vector<Element> el,
+			std::optional<u32> sf,
 			std::vector<FunctionImport> imFs,
 			std::vector<TableImport> imTs,
 			std::optional<MemoryImport> imMs,
@@ -170,6 +183,8 @@ namespace WASM {
 		Nullable<Function> functionByIndex(u32);
 		std::optional<ResolvedGlobal> globalByIndex(u32);
 		Nullable<Memory> memoryByIndex(u32);
+		Nullable<BytecodeFunction> startFunction() const { return mStartFunction; }
+		Nullable<Memory> memoryWithIndexZero() const { return linkedMemory; }
 
 		std::optional<ExportItem> exportByName(const std::string&, ExportType) const;
 		Nullable<Function> exportedFunctionByName(const std::string&);
@@ -186,6 +201,7 @@ namespace WASM {
 			std::vector<GlobalImport> importedGlobals;
 			std::vector<DeclaredGlobal> globalTypes;
 			std::vector<Element> elements;
+			std::optional<u32> startFunctionIndex;
 		};
 
 		std::string path;
@@ -201,6 +217,10 @@ namespace WASM {
 		std::vector<LinkedElement> elements;
 
 		u32 numRemainingElements{ 0 };
+
+		// Linked references
+		Nullable<BytecodeFunction> mStartFunction;
+		Nullable<Memory> linkedMemory;
 
 		std::unique_ptr<CompilationData> compilationData;
 		ExportTable exports;

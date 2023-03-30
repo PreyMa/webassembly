@@ -273,7 +273,7 @@ namespace WASM {
 		std::vector<MemoryType> memoryTypes;
 		std::vector<DeclaredGlobal> globals;
 		std::vector<Export> exports;
-		std::optional<u32> startFunction;
+		std::optional<u32> startFunctionIndex;
 		std::vector<Element> elements;
 		std::vector<FunctionCode> functionCodes;
 

@@ -112,6 +112,7 @@ Module ModuleParser::toModule()
 		std::move(globals32bit),
 		std::move(globals64bit),
 		std::move(elements),
+		std::move(startFunctionIndex),
 		// Imports
 		std::move(importedFunctions),
 		std::move(importedTableTypes),
