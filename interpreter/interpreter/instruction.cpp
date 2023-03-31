@@ -502,18 +502,21 @@ Instruction Instruction::fromWASMBytes(BufferIterator& it)
 	}
 	case IT::TableGet:
 	case IT::TableSet:
-	case IT::ElementDrop:
 	case IT::TableGrow:
 	case IT::TableSize:
 	case IT::TableFill: {
 		auto tableIdx = it.nextU32();
 		return { type, tableIdx };
 	}
+	case IT::ElementDrop: {
+		auto elementIdx = it.nextU32();
+		return { type, (u32)0, elementIdx };
+	}
 	case IT::TableInit:
 	case IT::TableCopy: {
 		auto elementIdx = it.nextU32();
 		auto tableIdx = it.nextU32();
-		return { type, elementIdx, tableIdx };
+		return { type, tableIdx, elementIdx };
 	}
 	case IT::I64Load:
 	case IT::F64Load:
@@ -1805,6 +1808,24 @@ u32 Instruction::dataSegmentIndex() const
 u32 Instruction::callTableIndex() const
 {
 	assert(type == InstructionType::CallIndirect);
+	return operandB;
+}
+
+u32 Instruction::elementIndex() const
+{
+	assert(type == InstructionType::TableInit || type == InstructionType::ElementDrop);
+	return operandB;
+}
+
+u32 Instruction::tableIndex() const
+{
+	// assert(isTableInstruction());
+	return operandA;
+}
+
+u32 WASM::Instruction::sourceTableIndex() const
+{
+	assert(type == InstructionType::TableCopy);
 	return operandB;
 }
 

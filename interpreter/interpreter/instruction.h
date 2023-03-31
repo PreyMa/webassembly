@@ -296,6 +296,9 @@ namespace WASM {
 		u32 memoryOffset() const;
 		u32 dataSegmentIndex() const;
 		u32 callTableIndex() const;
+		u32 elementIndex() const;
+		u32 tableIndex() const;
+		u32 sourceTableIndex() const;
 
 		i32 asI32Constant() const;
 		u32 asIF32Constant() const;

@@ -95,6 +95,7 @@ namespace WASM {
 
 		sizeType initTableIfActive(std::span<FunctionTable>);
 
+		ValType referenceType() const { return refType; }
 		const std::vector<Nullable<Function>>& references() const { return mFunctions; }
 
 	private:
@@ -344,6 +345,7 @@ namespace WASM {
 		void compileMemoryDataInstruction(Instruction);
 		void compileMemoryControlInstruction(Instruction);
 		void compileBranchTableInstruction(Instruction);
+		void compileTableInstruction(Instruction);
 		void compileInstruction(Instruction, u32);
 		void resetCachedReturnList(u32);
 

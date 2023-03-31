@@ -1395,6 +1395,82 @@ void ModuleCompiler::compileBranchTableInstruction(Instruction instruction)
 	setUnreachable();
 }
 
+void ModuleCompiler::compileTableInstruction(Instruction instruction)
+{
+	auto tableIdx = instruction.tableIndex();
+	auto table = module.tableByIndex(tableIdx);
+	if (!table.has_value()) {
+		throwCompilationError("Table instruction references invalid table index");
+	}
+
+	using IT = InstructionType;
+	u32 sourceTableIdx= 0;
+	if (instruction == IT::TableCopy) {
+		sourceTableIdx = instruction.sourceTableIndex();
+		auto sourceTable = module.tableByIndex(tableIdx);
+		if (!sourceTable.has_value()) {
+			throwCompilationError("Table instruction references invalid source table index");
+		}
+
+		if (table->type() != sourceTable->type()) {
+			throwCompilationError("Table copy instruction references tables with incompatible types");
+		}
+	}
+
+	u32 elementIdx= 0;
+	if (instruction == IT::TableInit) {
+		elementIdx = instruction.elementIndex();
+		if (elementIdx >= module.elements.size()) {
+			throwCompilationError("Table init instruction references invalid element");
+		}
+
+		auto element = module.elements[elementIdx];
+		if (table->type() != element.referenceType()) {
+			throwCompilationError("Table init instruction references element with incompatible type");
+		}
+	}
+
+	auto bytecode = instruction.toBytecode();
+	assert(bytecode.has_value());
+	print(*bytecode);
+	printU32(tableIdx);
+
+	auto type = table->type();
+	switch (instruction.opCode()) {
+	case IT::TableGet:
+		popValue(ValType::I32);
+		pushValue(type);
+		break;
+	case IT::TableSet:
+		popValue(type);
+		popValue(ValType::I32);
+		break;
+	case IT::TableSize:
+		pushValue(ValType::I32);
+		break;
+	case IT::TableGrow:
+		popValue(ValType::I32);
+		popValue(type);
+		pushValue(ValType::I32);
+		break;
+	case IT::TableFill:
+		popValue(ValType::I32);
+		popValue(type);
+		popValue(ValType::I32);
+		break;
+	case IT::TableCopy:
+		popValue(ValType::I32);
+		popValue(ValType::I32);
+		popValue(ValType::I32);
+
+		printU32(sourceTableIdx);
+		break;
+	case IT::TableInit:
+		printU32(elementIdx);
+		break;
+	}
+}
+
 void ModuleCompiler::compileInstruction(Instruction instruction, u32 instructionCounter)
 {
 	auto opCode = instruction.opCode();
@@ -1772,6 +1848,8 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 		auto global = globalByIndex(instruction.globalIndex());
 		pushValue(global.type.valType());
 
+		// FIXME: An immutable global could be replaced with a constant instruction
+
 		printGlobalTypeInstruction(global, Bytecode::I32GlobalGet, Bytecode::I64GlobalGet);
 		return;
 	}
@@ -1832,6 +1910,26 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 	case IT::F64Const:
 		compileNumericConstantInstruction(instruction);
 		return;
+
+	case IT::TableGet:
+	case IT::TableSet:
+	case IT::TableSize:
+	case IT::TableGrow:
+	case IT::TableFill:
+	case IT::TableCopy:
+	case IT::TableInit:
+		compileTableInstruction(instruction);
+		return;
+
+	case IT::ElementDrop: {
+		auto elementIdx = instruction.elementIndex();
+		if (elementIdx >= module.elements.size()) {
+			throwCompilationError("Element drop instruction references invalid element index");
+		}
+		print(Bytecode::ElementDrop);
+		printU32(elementIdx);
+		return;
+	}
 	}
 
 	std::cerr << "Compilation not implemented for instruction '" << opCode.name() << "'!" << std::endl;
