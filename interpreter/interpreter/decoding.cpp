@@ -734,7 +734,7 @@ FunctionCode ModuleParser::parseFunctionCode()
 	return { Expression{codeSlice, instructions}, std::move(locals) };
 }
 
-FunctionType::FunctionType(std::span<ValType> parameters, std::span<ValType> results)
+FunctionType::FunctionType(std::span<const ValType> parameters, std::span<const ValType> results)
 	: storage{ LocalArray{.numParameters = 0, .numResults = 0} } {
 
 	ValType* arrayPtr;
@@ -765,6 +765,9 @@ FunctionType::FunctionType(std::span<ValType> parameters, std::span<ValType> res
 		arrayPtr[i + parameters.size()] = results[i];
 	}
 }
+
+FunctionType::FunctionType(const FunctionType& other)
+	: FunctionType{ other.parameters(), other.results() } {}
 
 const std::span<const ValType> FunctionType::parameters() const
 {
@@ -852,6 +855,31 @@ void FunctionType::print(std::ostream& out) const
 	if (results().empty()) {
 		out << "<none>";
 	}
+}
+
+bool FunctionType::operator==(const FunctionType& other) const
+{
+	if (this == &other) {
+		return true;
+	}
+
+	if (parameters().size() != other.parameters().size() || results().size() != other.results().size()) {
+		return false;
+	}
+
+	for (u32 i = 0; i != parameters().size(); i++) {
+		if (parameters()[i] != other.parameters()[i]) {
+			return false;
+		}
+	}
+
+	for (u32 i = 0; i != results().size(); i++) {
+		if (results()[i] != other.results()[i]) {
+			return false;
+		}
+	}
+
+	return true;
 }
 
 void Limits::print(std::ostream& out) const

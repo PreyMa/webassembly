@@ -42,4 +42,35 @@ namespace WASM {
 
 		T* ptr{ nullptr };
 	};
+
+	template<typename T>
+	class NonNull {
+	public:
+		NonNull(const NonNull&) = default;
+
+		NonNull(T& x) : ptr{ &x } {};
+
+		template<typename U>
+		NonNull(const NonNull<U>& x) : ptr{ x.ptr } {};
+
+		T& value() { return *ptr; }
+		const T& value() const { return *ptr; }
+
+		T& operator*() { return value(); }
+		const T& operator*() const { return value(); }
+
+		T* operator->() { return ptr; }
+		const T* operator->() const { return ptr; }
+
+		T* pointer() { return ptr; }
+		const T* pointer() const { return ptr; }
+
+		NonNull operator=(T& x) { ptr = &x; return *this; };
+
+		template<typename U>
+		NonNull operator=(const NonNull<U>& x) { ptr = x.ptr; return *this; };
+
+	private:
+		T* ptr;
+	};
 }

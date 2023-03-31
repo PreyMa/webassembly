@@ -7,6 +7,7 @@
 #include "decoding.h"
 #include "bytecode.h"
 #include "arraylist.h"
+#include "sealed.h"
 
 namespace WASM {
 
@@ -33,9 +34,12 @@ namespace WASM {
 		virtual Nullable<const BytecodeFunction> asBytecodeFunction() const { return *this; }
 
 		u32 index() const { return mIndex; }
-		u32 typeIndex() const { return mTypeIndex; }
+		u32 moduleBaseTypeIndex() const { return mModuleBasedTypeIndex; }
+		u32 deduplicatedTypeIndex() const { return mDeduplicatedTypeIndex; }
 		const Expression& expression() const { return code; }
-		virtual const FunctionType& functionType() const override { return type; }
+
+		void setLinkedFunctionType(u32 idx, FunctionType& ft) { mDeduplicatedTypeIndex= idx;  type = ft; }
+		virtual const FunctionType& functionType() const override { return *type; }
 
 		u32 maxStackHeight() const { return mMaxStackHeight; }
 		void setMaxStackHeight(u32 h) { mMaxStackHeight = h; }
@@ -54,8 +58,9 @@ namespace WASM {
 		void uncompressLocalTypes(const std::vector<CompressedLocalTypes>&);
 
 		u32 mIndex;
-		u32 mTypeIndex;
-		FunctionType& type;
+		u32 mModuleBasedTypeIndex;
+		u32 mDeduplicatedTypeIndex{ 0 };
+		NonNull<FunctionType> type;
 		Expression code;
 		std::vector<LocalOffset> uncompressedLocals;
 		u32 mMaxStackHeight{ 0 };
@@ -66,13 +71,14 @@ namespace WASM {
 	public:
 		FunctionTable(u32, const TableType&);
 
-		i32 grow(i32, Nullable<Function>);
+		ValType type() const { return mType; }
 
+		i32 grow(i32, Nullable<Function>);
 		void init(const LinkedElement&, u32, u32, u32);
 
 	private:
 		u32 index;
-		ValType type;
+		ValType mType;
 		Limits limits;
 		std::vector<Nullable<Function>> table;
 	};
@@ -87,7 +93,7 @@ namespace WASM {
 			assert(mMode == ElementMode::Passive);
 		}
 
-		sizeType initTableIfActive(std::vector<FunctionTable>&);
+		sizeType initTableIfActive(std::span<FunctionTable>);
 
 		const std::vector<Nullable<Function>>& references() const { return mFunctions; }
 
@@ -183,6 +189,7 @@ namespace WASM {
 		Nullable<Function> functionByIndex(u32);
 		std::optional<ResolvedGlobal> globalByIndex(u32);
 		Nullable<Memory> memoryByIndex(u32);
+		Nullable<FunctionTable> tableByIndex(u32);
 		Nullable<BytecodeFunction> startFunction() const { return mStartFunction; }
 		Nullable<Memory> memoryWithIndexZero() const { return linkedMemory; }
 
@@ -202,18 +209,18 @@ namespace WASM {
 			std::vector<DeclaredGlobal> globalTypes;
 			std::vector<Element> elements;
 			std::optional<u32> startFunctionIndex;
+			std::vector<FunctionType> functionTypes;
 		};
 
 		std::string path;
 		std::string mName;
 		Buffer data;
 
-		std::vector<FunctionType> functionTypes;
-		std::vector<BytecodeFunction> functions;
-		std::vector<FunctionTable> functionTables;
+		SealedVector<BytecodeFunction> functions;
+		SealedVector<FunctionTable> functionTables;
 		std::optional<Memory> ownedMemoryInstance;
-		std::vector<Global<u32>> globals32;
-		std::vector<Global<u64>> globals64;
+		SealedVector<Global<u32>> globals32;
+		SealedVector<Global<u64>> globals64;
 		std::vector<LinkedElement> elements;
 
 		u32 numRemainingElements{ 0 };
@@ -235,11 +242,14 @@ namespace WASM {
 
 	class ModuleLinker {
 	public:
-		ModuleLinker(std::span<Module> ms) : modules{ ms } {}
+		ModuleLinker(Interpreter& inter, std::span<Module> ms) : interpreter{ inter }, modules { ms } {}
 
 		void link();
 
 	private:
+		void buildDeduplicatedFunctionTypeTable();
+
+		Interpreter& interpreter;
 		std::span<Module> modules;
 	};
 

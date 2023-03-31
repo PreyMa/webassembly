@@ -13,8 +13,8 @@ static constexpr inline bool isShortDistance(i32 distance) {
 	return distance >= -128 && distance <= 127;
 }
 
-BytecodeFunction::BytecodeFunction(u32 idx, u32 ti, FunctionType& t, FunctionCode&& c)
-	: mIndex{ idx }, mTypeIndex{ ti }, type{ t }, code{ std::move(c.code) } {
+BytecodeFunction::BytecodeFunction(u32 idx, u32 ti, FunctionType& ft, FunctionCode&& c)
+	: mIndex{ idx }, mModuleBasedTypeIndex{ ti }, type{ft}, code{ std::move(c.code) } {
 	uncompressLocalTypes(c.compressedLocalTypes);
 }
 
@@ -29,7 +29,7 @@ std::optional<BytecodeFunction::LocalOffset> BytecodeFunction::localByIndex(u32 
 
 bool BytecodeFunction::hasLocals() const
 {
-	return type.parameters().size() < uncompressedLocals.size();
+	return type->parameters().size() < uncompressedLocals.size();
 }
 
 u32 BytecodeFunction::operandStackSectionOffsetInBytes() const
@@ -55,7 +55,7 @@ u32 BytecodeFunction::localsSizeInBytes() const
 		return 0;
 	}
 
-	u32 beginLocalsByteOffset = uncompressedLocals[type.parameters().size()].offset;
+	u32 beginLocalsByteOffset = uncompressedLocals[type->parameters().size()].offset;
 	u32 endLocalsByteOffset = operandStackSectionOffsetInBytes();
 
 	return endLocalsByteOffset - beginLocalsByteOffset;
@@ -80,7 +80,7 @@ Nullable<const std::string> BytecodeFunction::lookupName(const Module& module)
 void BytecodeFunction::uncompressLocalTypes(const std::vector<CompressedLocalTypes>& compressedLocals)
 {
 	// Count the parameters and locals
-	auto& params = type.parameters();
+	auto& params = type->parameters();
 	u32 numLocals = params.size();
 	for (auto& pack : compressedLocals) {
 		numLocals += pack.count;
@@ -108,7 +108,7 @@ void BytecodeFunction::uncompressLocalTypes(const std::vector<CompressedLocalTyp
 }
 
 FunctionTable::FunctionTable(u32 idx, const TableType& tableType)
-	: index{ idx }, type{ tableType.valType() }, limits{ tableType.limits() }
+	: index{ idx }, mType{ tableType.valType() }, limits{ tableType.limits() }
 {
 	if (grow(limits.min(), {}) != 0) {
 		throw std::runtime_error{ "Could not init table" };
@@ -151,7 +151,7 @@ void FunctionTable::init(const LinkedElement& element, u32 tableOffset, u32 elem
 }
 
 
-sizeType LinkedElement::initTableIfActive(std::vector<FunctionTable>& tables)
+sizeType LinkedElement::initTableIfActive(std::span<FunctionTable> tables)
 {
 	if (mMode != ElementMode::Active) {
 		return 0;
@@ -228,7 +228,6 @@ Module::Module(
 	: path{ std::move(p) },
 	mName{ std::move(n) },
 	data{ std::move(b) },
-	functionTypes{ std::move(ft) },
 	functions{ std::move(fs) },
 	functionTables{ std::move(ts) },
 	globals32{ std::move(g32) },
@@ -242,7 +241,8 @@ Module::Module(
 			std::move(imGs),
 			std::move(gt),
 			std::move(el),
-			std::move(sf)
+			std::move(sf),
+			std::move(ft)
 		)
 	},
 	exports{ std::move(ex) },
@@ -381,6 +381,21 @@ Nullable<Memory> Module::memoryByIndex(u32 idx)
 	return *ownedMemoryInstance;
 }
 
+Nullable<FunctionTable> WASM::Module::tableByIndex(u32 idx)
+{
+	if (idx < numImportedTables) {
+		if (compilationData) {
+			return compilationData->importedTables[idx].resolvedTable;
+		}
+
+		return {};
+	}
+
+	idx -= numImportedTables;
+	assert(idx < functionTables.size());
+	return functionTables[idx];
+}
+
 std::optional<ExportItem> Module::exportByName(const std::string& name, ExportType type) const
 {
 	auto findFunction = exports.find(name);
@@ -418,9 +433,15 @@ Nullable<const std::string> Module::functionNameByIndex(u32 functionIdx) const
 
 void ModuleLinker::link()
 {
+	if (modules.empty()) {
+		throw std::runtime_error{ "Nothing to link" };
+	}
+
 	//if (!module.needsLinking()) {
 //		throwCompilationError("Module already linked");
 //	}
+
+	buildDeduplicatedFunctionTypeTable();
 
 	// TODO: Linking
 	// for (auto& func : module.compilationData->importedFunctions) {
@@ -455,6 +476,37 @@ void ModuleLinker::link()
 	modules[0].linkedMemory = *modules[0].ownedMemoryInstance;
 }
 
+void ModuleLinker::buildDeduplicatedFunctionTypeTable()
+{
+	std::vector<FunctionType> dedupedFunctionTypes;
+	dedupedFunctionTypes.reserve(modules[0].compilationData->functionTypes.size());
+
+	for (auto& module : modules) {
+		auto& types = module.compilationData->functionTypes;
+		for (auto& type : types) {
+			auto findIt = std::find(dedupedFunctionTypes.begin(), dedupedFunctionTypes.end(), type);
+			if (findIt == dedupedFunctionTypes.end()) {
+				dedupedFunctionTypes.emplace_back(type);
+			}
+		}
+	}
+
+	for (auto& module : modules) {
+		for (auto& function : module.functions) {
+			auto typeIdx = function.moduleBaseTypeIndex();
+			assert(typeIdx < module.compilationData->functionTypes.size());
+			auto& type = module.compilationData->functionTypes[typeIdx];
+
+			auto findIt = std::find(dedupedFunctionTypes.begin(), dedupedFunctionTypes.end(), type);
+			assert(findIt != dedupedFunctionTypes.end());
+
+			function.setLinkedFunctionType( findIt - dedupedFunctionTypes.begin(), *findIt);
+		}
+	}
+
+	interpreter.functionTypes = std::move(dedupedFunctionTypes);
+}
+
 
 
 std::optional<sizeType> ModuleCompiler::LabelTypes::size(const Module& module) const
@@ -479,11 +531,12 @@ std::optional<sizeType> ModuleCompiler::LabelTypes::size(const Module& module) c
 		typeIndex = asResults().index;
 	}
 
-	if (typeIndex >= module.functionTypes.size()) {
+	assert(module.compilationData);
+	if (typeIndex >= module.compilationData->functionTypes.size()) {
 		return {};
 	}
 
-	auto& functionType = module.functionTypes[typeIndex];
+	auto& functionType = module.compilationData->functionTypes[typeIndex];
 	if (isParameters()) {
 		return functionType.parameters().size();
 	}
@@ -551,7 +604,7 @@ void ModuleCompiler::compileFunction(BytecodeFunction& function)
 
 	setFunctionContext(function);
 
-	auto typeIdx = function.typeIndex();
+	auto typeIdx = function.moduleBaseTypeIndex();
 	controlStack.emplace_back(InstructionType::NoOperation, BlockTypeIndex{ BlockType::TypeIndex, typeIdx }, 0, 0, false, 0);
 
 	// Print entry bytecode if the function has any locals or requires the module instance
@@ -631,10 +684,11 @@ void ModuleCompiler::pushValues(std::span<const ValueRecord> types)
 void ModuleCompiler::pushValues(const BlockTypeParameters& parameters)
 {
 	if (parameters.has_value()) {
-		if (*parameters >= module.functionTypes.size()) {
+		assert(module.compilationData);
+		if (*parameters >= module.compilationData->functionTypes.size()) {
 			throwCompilationError("Block type index references invalid function type");
 		}
-		auto& type = module.functionTypes[*parameters];
+		auto& type = module.compilationData->functionTypes[*parameters];
 		pushValues(type.parameters());
 	}
 }
@@ -642,10 +696,11 @@ void ModuleCompiler::pushValues(const BlockTypeParameters& parameters)
 void ModuleCompiler::pushValues(const BlockTypeResults& results)
 {
 	if (results == BlockType::TypeIndex) {
-		if (results.index >= module.functionTypes.size()) {
+		assert(module.compilationData);
+		if (results.index >= module.compilationData->functionTypes.size()) {
 			throwCompilationError("Block type index references invalid function type");
 		}
-		auto& type = module.functionTypes[results.index];
+		auto& type = module.compilationData->functionTypes[results.index];
 		pushValues(type.results());
 		return;
 	}
@@ -698,10 +753,11 @@ Module::ResolvedGlobal ModuleCompiler::globalByIndex(u32 idx) const
 
 const FunctionType& ModuleCompiler::blockTypeByIndex(u32 idx)
 {
-	if (idx >= module.functionTypes.size()) {
+	assert(module.compilationData);
+	if (idx >= module.compilationData->functionTypes.size()) {
 		throwCompilationError("Block type index references invalid function type");
 	}
-	return module.functionTypes[idx];
+	return module.compilationData->functionTypes[idx];
 }
 
 const Memory& ModuleCompiler::memoryByIndex(u32 idx)
@@ -1579,6 +1635,35 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 			printPointer(hostFunction.pointer());
 		}
 
+		return;
+	}
+
+	case IT::CallIndirect: {
+		auto typeIdx = instruction.functionIndex();
+		if (typeIdx >= module.compilationData->functionTypes.size()) {
+			throwCompilationError("Call indirect instruction references invalid function type");
+		}
+		auto& funcType = module.compilationData->functionTypes[typeIdx];
+
+		auto tableIdx = instruction.callTableIndex();
+		auto table = module.tableByIndex(tableIdx);
+		if (!table.has_value()) {
+			throwCompilationError("Call indirect instruction references invalid table index");
+		}
+
+		if (table->type() != ValType::FuncRef) {
+			throwCompilationError("Call indirect instruction references table that is not function reference type");
+		}
+
+		auto dedupedTypeIdx = interpreter.indexOfDeduplicatedFunctionType(funcType);
+
+		popValue(ValType::I32);
+		popValues(funcType.parameters());
+		pushValues(funcType.results());
+
+		print(Bytecode::CallIndirect);
+		printU32(tableIdx);
+		printU32(dedupedTypeIdx);
 		return;
 	}
 

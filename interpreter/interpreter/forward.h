@@ -69,5 +69,9 @@ namespace WASM {
 	class ModuleLinker;
 	class ModuleCompiler;
 
+	template<typename> class Nullable;
+	template<typename> class NoNull;
+
 	template<typename> class ArrayList;
+	template<typename> class SealedVector;
 }

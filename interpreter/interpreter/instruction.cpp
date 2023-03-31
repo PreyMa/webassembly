@@ -1786,7 +1786,7 @@ u32 Instruction::globalIndex() const
 }
 
 u32 Instruction::functionIndex() const {
-	assert(type == InstructionType::Call);
+	assert(type == InstructionType::Call || type == InstructionType::CallIndirect);
 	return operandA;
 }
 
@@ -1800,6 +1800,12 @@ u32 Instruction::dataSegmentIndex() const
 {
 	assert(type == InstructionType::MemoryInit || type == InstructionType::DataDrop);
 	return operandA;
+}
+
+u32 Instruction::callTableIndex() const
+{
+	assert(type == InstructionType::CallIndirect);
+	return operandB;
 }
 
 i32 Instruction::asI32Constant() const

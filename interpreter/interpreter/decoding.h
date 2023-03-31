@@ -40,9 +40,8 @@ namespace WASM {
 
 	class FunctionType {
 	public:
-		FunctionType(std::span<ValType>, std::span<ValType>);
-
-		FunctionType(const FunctionType&) = delete;
+		FunctionType(std::span<const ValType>, std::span<const ValType>);
+		FunctionType(const FunctionType&);
 		FunctionType(FunctionType&&) = default;
 
 		const std::span<const ValType> parameters() const;
@@ -53,6 +52,8 @@ namespace WASM {
 		u32 parameterStackSectionSizeInBytes() const;
 		u32 resultStackSectionSizeInBytes() const;
 		void print(std::ostream&) const;
+
+		bool operator==(const FunctionType&) const;
 
 	private:
 		struct HeapArray {

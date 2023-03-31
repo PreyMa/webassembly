@@ -72,15 +72,18 @@ namespace WASM {
 		void attachIntrospector(std::unique_ptr<Introspector>);
 
 	private:
+		friend class ModuleLinker;
 		friend class ModuleCompiler;
 
 		ValuePack executeFunction(Function&, std::span<Value>);
 		ValuePack runInterpreterLoop(const BytecodeFunction&, std::span<Value>);
 
 		Nullable<Function> findFunction(const std::string&, const std::string&);
+		u32 indexOfDeduplicatedFunctionType(FunctionType&) const;
 
 		std::vector<Module> modules;
 		std::unordered_map<std::string, Nullable<Module>> moduleNameMap;
+		SealedVector<FunctionType> functionTypes;
 
 		bool hasLinked{ false };
 		bool isInterpreting{ false };
