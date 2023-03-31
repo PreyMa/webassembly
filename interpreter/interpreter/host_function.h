@@ -34,51 +34,49 @@ namespace WASM {
 			auto parameters = ParameterTypeBuilder<typename TTyper::Parameters>::buildVector();
 			auto results = ResultTypeBuilder<typename TTyper::Result>::buildVector();
 
-			return { std::move(parameters), std::move(results) };
+			return { parameters, results };
 		}
 
 	private:
 		template<typename ...Us>
-		static std::vector<ValType> buildValTypeVector() {
-			std::vector<ValType> vec;
-			vec.reserve(sizeof...(Us));
+		static auto buildValTypeVector() {
+			std::array<ValType, sizeof...(Us)> array;
 
 			if constexpr (sizeof...(Us) > 0) {
-				buildValTypeVectorIterate<Us...>(vec);
+				buildValTypeVectorIterate<Us...>(array.data());
 			}
 
-			return vec;
+			return array;
 		}
 
 		template<typename U, typename ...Us>
-		static void buildValTypeVectorIterate(std::vector<ValType>& vec) {
-			vec.emplace_back( ValType::fromType<U>() );
+		static void buildValTypeVectorIterate(ValType* it) {
+			*it= ValType::fromType<U>();
 
 			if constexpr (sizeof...(Us) > 0) {
-				buildValTypeVectorIterate<Us...>(vec);
+				buildValTypeVectorIterate<Us...>(it+ 1);
 			}
 		}
 
 		template<typename U>
 		struct ResultTypeBuilder {
-			static std::vector<ValType> buildVector() {
-				std::vector<ValType> vec;
-				vec.reserve(1);
-				buildValTypeVectorIterate<U>(vec);
-				return vec;
+			static auto buildVector() {
+				std::array<ValType, 1> array;
+				buildValTypeVectorIterate<U>(array.data());
+				return array;
 			}
 		};
 
 		template<>
 		struct ResultTypeBuilder<void> {
-			static std::vector<ValType> buildVector() {
+			static std::array<ValType, 0> buildVector() {
 				return {};
 			}
 		};
 
 		template<typename ...Us>
 		struct ResultTypeBuilder<std::tuple<Us...>> {
-			static std::vector<ValType> buildVector() {
+			static auto buildVector() {
 				return buildValTypeVector<Us...>();
 			}
 		};
@@ -88,7 +86,7 @@ namespace WASM {
 
 		template<typename ...Us>
 		struct ParameterTypeBuilder<Detail::ParameterPack<Us...>> {
-			static std::vector<ValType> buildVector() {
+			static auto buildVector() {
 				return buildValTypeVector<Us...>();
 			}
 		};

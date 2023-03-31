@@ -10,8 +10,9 @@ namespace WASM {
 
 		template<typename T>
 		static TSpecial fromInt(T x) {
+			static_assert(TSpecial::TEnum::NumberOfItems < ((TStorage)~0));
 			assert(x < TSpecial::TEnum::NumberOfItems);
-			return TSpecial{ x };
+			return TSpecial{ (TStorage)x };
 		}
 
 		explicit Enum(TStorage v) : value{ v } {}
@@ -48,7 +49,7 @@ namespace WASM {
 		const char* name() const;
 	};
 
-	class ValType : public Enum<ValType> {
+	class ValType : public Enum<ValType, u8> {
 	public:
 		enum TEnum {
 			I32 = 0x7F,
@@ -61,8 +62,11 @@ namespace WASM {
 			NumberOfItems = 0x80
 		};
 
-		using Enum<ValType>::Enum;
-		ValType(TEnum e) : Enum<ValType>{ e } {}
+		using Enum<ValType, u8>::Enum;
+		ValType(TEnum e) : Enum<ValType, u8>{ e } {}
+
+		// Requried for the local array in FunctionType
+		ValType() : Enum<ValType, u8>{ TEnum::I32 } {}
 
 		bool isNumber() const;
 		bool isVector() const;

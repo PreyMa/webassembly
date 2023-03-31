@@ -454,26 +454,35 @@ ModuleParser::IndirectNameMap ModuleParser::parseIndirectNameMap()
 FunctionType ModuleParser::parseFunctionType()
 {
 	assertU8(0x60);
-	auto parameters = parseResultTypeVector();
-	auto results = parseResultTypeVector();
+
+	// Just append to the vector to keep the parameters
+	auto numParameters = parseResultTypeVector().size();
+	auto numResults = parseResultTypeVector(false).size()- numParameters;
+
+	auto it= cachedResultTypeVector.begin();
+	std::span<ValType> parameterSlice{ it, it + numParameters };
+	std::span<ValType> resultSlice{ it + numParameters, it + numParameters + numResults };
 	
-	return { std::move(parameters), std::move(results) };
+	return { parameterSlice, resultSlice };
 }
 
-std::vector<ValType> ModuleParser::parseResultTypeVector()
+std::vector<ValType>& ModuleParser::parseResultTypeVector(bool doClearVector)
 {
+	if (doClearVector) {
+		cachedResultTypeVector.clear();
+	}
+
 	auto resultNum = nextU32();
-	std::vector<ValType> results;
-	results.reserve(resultNum);
+	cachedResultTypeVector.reserve(cachedResultTypeVector.size()+ resultNum);
 	for (u32 i = 0; i != resultNum; i++) {
 		auto valType = ValType::fromInt(nextU8());
 		if (!valType.isValid()) {
 			throwParsingError("Found invalid val type while parsing result type vector");
 		}
-		results.push_back( valType );
+		cachedResultTypeVector.push_back( valType );
 	}
 
-	return results;
+	return cachedResultTypeVector;
 }
 
 TableType ModuleParser::parseTableType()
@@ -725,14 +734,64 @@ FunctionCode ModuleParser::parseFunctionCode()
 	return { Expression{codeSlice, instructions}, std::move(locals) };
 }
 
+FunctionType::FunctionType(std::span<ValType> parameters, std::span<ValType> results)
+	: storage{ LocalArray{.numParameters = 0, .numResults = 0} } {
+
+	ValType* arrayPtr;
+	auto arrayLength = parameters.size() + results.size();
+	if (arrayLength <= LocalArray::maxStoredEntries) {
+		auto& local = std::get<0>(storage);
+		local.numParameters = parameters.size();
+		local.numResults = results.size();
+		arrayPtr = local.array;
+	}
+	else {
+		storage = HeapArray{
+		.array = std::make_unique<ValType[]>(arrayLength),
+		.numParameters = parameters.size(),
+		.numResults = results.size()
+		};
+
+		arrayPtr = std::get<1>(storage).array.get();
+		assert(arrayPtr);
+	}
+
+	// Copy to array
+	for (u32 i = 0; i != parameters.size(); i++) {
+		arrayPtr[i] = parameters[i];
+	}
+
+	for (u32 i = 0; i != results.size(); i++) {
+		arrayPtr[i + parameters.size()] = results[i];
+	}
+}
+
+const std::span<const ValType> FunctionType::parameters() const
+{
+	if (isLocalArray()) {
+		return { asLocalArray().array, asLocalArray().numParameters };
+	}
+
+	return { asHeapArray().array.get(), asHeapArray().numParameters };
+}
+
+const std::span<const ValType> FunctionType::results() const
+{
+	if (isLocalArray()) {
+		return { asLocalArray().array + asLocalArray().numParameters, asLocalArray().numResults };
+	}
+
+	return { asHeapArray().array.get() + asHeapArray().numParameters, asHeapArray().numResults };
+}
+
 bool FunctionType::returnsVoid() const
 {
-	return mResults.empty();
+	return results().empty();
 }
 
 bool FunctionType::takesVoidReturnsVoid() const
 {
-	return mParameters.empty() && mResults.empty();
+	return parameters().empty() && results().empty();
 }
 
 u32 FunctionType::parameterStackSectionSizeInBytes() const
@@ -742,7 +801,7 @@ u32 FunctionType::parameterStackSectionSizeInBytes() const
 	}
 
 	u32 numBytesParameters = 0;
-	for (auto valType : mParameters) {
+	for (auto valType : parameters()) {
 		numBytesParameters+= valType.sizeInBytes();
 	}
 	requiredParameterStackBytes = numBytesParameters;
@@ -757,7 +816,7 @@ u32 FunctionType::resultStackSectionSizeInBytes() const
 	}
 
 	u32 numBytesResults = 0;
-	for (auto valType : mResults) {
+	for (auto valType : results()) {
 		numBytesResults += valType.sizeInBytes();
 	}
 	requiredResultStackBytes = numBytesResults;
@@ -769,21 +828,28 @@ void FunctionType::print(std::ostream& out) const
 {
 	out << "Function: ";
 
-	for (auto& param : mParameters) {
+	if (isLocalArray()) {
+		out << "(local) ";
+	}
+	else {
+		out << "(heap) ";
+	}
+
+	for (auto& param : parameters()) {
 		out << param.name() << ' ';
 	}
 
-	if (mParameters.empty()) {
+	if (parameters().empty()) {
 		out << "<none> ";
 	}
 
 	out << "-> ";
 
-	for (auto& result : mResults) {
+	for (auto& result : results()) {
 		out << result.name() << ' ';
 	}
 
-	if (mResults.empty()) {
+	if (results().empty()) {
 		out << "<none>";
 	}
 }

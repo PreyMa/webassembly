@@ -40,13 +40,13 @@ namespace WASM {
 
 	class FunctionType {
 	public:
-		FunctionType(std::vector<ValType> p, std::vector<ValType> r)
-			: mParameters{ std::move(p) }, mResults{ std::move(r) } {}
+		FunctionType(std::span<ValType>, std::span<ValType>);
 
+		FunctionType(const FunctionType&) = delete;
 		FunctionType(FunctionType&&) = default;
 
-		const std::vector<ValType>& parameters() const { return mParameters; }
-		const std::vector<ValType>& results() const { return mResults; }
+		const std::span<const ValType> parameters() const;
+		const std::span<const ValType> results() const;
 
 		bool returnsVoid() const;
 		bool takesVoidReturnsVoid() const;
@@ -55,8 +55,26 @@ namespace WASM {
 		void print(std::ostream&) const;
 
 	private:
-		std::vector<ValType> mParameters;
-		std::vector<ValType> mResults;
+		struct HeapArray {
+			std::unique_ptr<ValType[]> array;
+			sizeType numParameters;
+			sizeType numResults;
+		};
+
+		struct LocalArray {
+			static constexpr sizeType maxStoredEntries = (sizeof(HeapArray) - 2) / sizeof(ValType);
+			ValType array[maxStoredEntries];
+			u8 numParameters;
+			u8 numResults;
+		};
+
+		bool isLocalArray() const { return storage.index() == 0; }
+		const LocalArray& asLocalArray() const { assert(isLocalArray());  return std::get<0>(storage); }
+		const HeapArray& asHeapArray() const { assert(!isLocalArray());  return std::get<1>(storage); }
+
+
+		std::variant<LocalArray, HeapArray> storage;
+
 		mutable std::optional<u32> requiredParameterStackBytes;
 		mutable std::optional<u32> requiredResultStackBytes;
 	};
@@ -329,7 +347,7 @@ namespace WASM {
 		IndirectNameMap parseIndirectNameMap();
 
 		FunctionType parseFunctionType();
-		std::vector<ValType> parseResultTypeVector();
+		std::vector<ValType>& parseResultTypeVector(bool= true);
 
 		TableType parseTableType();
 		MemoryType parseMemoryType();
@@ -347,6 +365,7 @@ namespace WASM {
 		void throwParsingError(const char*) const;
 
 		Nullable<Introspector> introspector;
+		std::vector<ValType> cachedResultTypeVector;
 	};
 
 

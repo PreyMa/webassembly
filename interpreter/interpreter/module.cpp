@@ -604,7 +604,7 @@ void ModuleCompiler::pushMaybeValue(ValueRecord record)
 	}
 }
 
-void ModuleCompiler::pushValues(const std::vector<ValType>& types)
+void ModuleCompiler::pushValues(std::span<const ValType> types)
 {
 	valueStack.reserve(valueStack.size() + types.size());
 	valueStack.insert(valueStack.end(), types.begin(), types.end());
@@ -615,7 +615,7 @@ void ModuleCompiler::pushValues(const std::vector<ValType>& types)
 	}
 }
 
-void ModuleCompiler::pushValues(const std::vector<ValueRecord>& types)
+void ModuleCompiler::pushValues(std::span<const ValueRecord> types)
 {
 	valueStack.reserve(valueStack.size() + types.size());
 	valueStack.insert(valueStack.end(), types.begin(), types.end());
@@ -837,7 +837,7 @@ ModuleCompiler::ValueRecord ModuleCompiler::popValue(ValueRecord expected)
 	throwCompilationError("Stack types differ");
 }
 
-void ModuleCompiler::popValues(const std::vector<ModuleCompiler::ValueRecord>& expected)
+void ModuleCompiler::popValues(std::span<const ModuleCompiler::ValueRecord> expected)
 {
 	/*resetCachedReturnList(expected.size());
 
@@ -853,14 +853,14 @@ void ModuleCompiler::popValues(const std::vector<ModuleCompiler::ValueRecord>& e
 	}
 }
 
-void ModuleCompiler::popValues(const std::vector<ValType>& expected)
+void ModuleCompiler::popValues(std::span<const ValType> expected)
 {
 	for (auto it = expected.rbegin(); it != expected.rend(); it++) {
 		popValue(*it);
 	}
 }
 
-const std::vector<ModuleCompiler::ValueRecord>& ModuleCompiler::popValuesToList(const std::vector<ValType>& expected)
+const std::vector<ModuleCompiler::ValueRecord>& ModuleCompiler::popValuesToList(std::span<const ValType> expected)
 {
 	resetCachedReturnList(expected.size());
 
