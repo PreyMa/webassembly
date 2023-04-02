@@ -4,6 +4,11 @@
 #include "enum.h"
 
 namespace WASM {
+
+	/*
+	* Bytecode enum
+	* Definition of all interpreter bytecodes
+	*/
 	class Bytecode : public Enum<Bytecode, u8> {
 	public:
 		enum TEnum {
@@ -225,6 +230,11 @@ namespace WASM {
 		BytecodeArguments arguments() const;
 	};
 
+	/*
+	* Bytecode Arguments enum
+	* Defines all different kinds of arguments configurations
+	* expected by interpreter bytecodes
+	*/
 	class BytecodeArguments : public Enum<BytecodeArguments> {
 	public:
 		enum TEnum {

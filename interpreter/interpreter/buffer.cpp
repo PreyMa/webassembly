@@ -5,6 +5,13 @@
 
 using namespace WASM;
 
+/*
+* Decodes different integer types of LEB128 data
+* based on their size in bytes and whether they 
+* are signed.
+* 
+* https://webassembly.github.io/spec/core/binary/values.html#integers
+*/
 template<typename T>
 class LEB128Decoder {
 public:
@@ -54,7 +61,7 @@ Buffer Buffer::fromFile(const std::string& path)
 {
 	std::ifstream file{ path, std::ios::binary };
 	if (!file.is_open() || !file.good()) {
-		throw std::runtime_error("Coudl not open module file");
+		throw std::runtime_error("Could not open module file");
 	}
 
 	std::vector<u8> vecBuffer{ std::istreambuf_iterator<char>{ file }, {} };

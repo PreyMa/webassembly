@@ -10,6 +10,15 @@
 #include "forward.h"
 
 namespace WASM {
+	/*
+	* Buffer iterator class
+	* Reads data from a buffer object in multiple different ways.
+	* Helps parsing byte data and decoding stored values. Integers
+	* are read in LEB128 encoding by default, which is used by WASM
+	* binary files.
+	* 
+	* https://webassembly.github.io/spec/core/binary/values.html#integers
+	*/
 	class BufferIterator {
 	public:
 		BufferIterator() = default;
@@ -58,6 +67,12 @@ namespace WASM {
 		u8* mEndPosition{ nullptr };
 	};
 
+	/*
+	* Buffer class
+	* Wrapper for a vector of bytes which provides some
+	* additional methods for handling byte data and integrating
+	* with buffer iterators.
+	*/
 	class Buffer {
 	public:
 		static Buffer fromFile(const std::string&);
@@ -94,7 +109,11 @@ namespace WASM {
 		std::vector<u8> mData;
 	};
 
-
+	/*
+	* Buffer Slice class
+	* An unowned slice/span of a buffer data section which 
+	* has the same interface as a buffer object.
+	*/
 	class BufferSlice {
 	public:
 		BufferSlice(u8* b, sizeType l) : mBegin{ b }, mLength{ l } {}

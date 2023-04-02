@@ -33,6 +33,7 @@ void ModuleParser::parse(Buffer buffer, std::string modulePath)
 
 Module ModuleParser::toModule()
 {
+	// Create bytecode function objects
 	std::vector<BytecodeFunction> bytecodeFunctions;
 	bytecodeFunctions.reserve(functions.size());
 
@@ -45,6 +46,7 @@ Module ModuleParser::toModule()
 		bytecodeFunctions.emplace_back(functionIdx, typeIdx, funcType, std::move(funcCode));
 	}
 
+	// Create function table objects
 	std::vector<FunctionTable> functionTables;
 	functionTables.reserve(tableTypes.size());
 
@@ -54,11 +56,14 @@ Module ModuleParser::toModule()
 		functionTables.emplace_back(tableIdx, tableType);
 	}
 
+	// Create memory instance if one is defined
 	std::optional<Memory> memoryInstance;
 	if (!memoryTypes.empty()) {
 		memoryInstance.emplace(0, memoryTypes[0].limits());
 	}
 
+	// Count the number of 32bit and 64bit globals, assign relative indices
+	// and allocate arrays for them
 	u32 num32BitGlobals= 0;
 	u32 num64BitGlobals= 0;
 	for (auto& global : globals) {
@@ -82,6 +87,7 @@ Module ModuleParser::toModule()
 	globals64bit.reserve(num64BitGlobals);
 	globals64bit.insert(globals64bit.end(), num64BitGlobals, {});
 
+	// Create export table object
 	ExportTable exportTable;
 	exportTable.reserve(exports.size());
 
@@ -89,6 +95,7 @@ Module ModuleParser::toModule()
 		exportTable.emplace( exp.moveName(), exp.toItem());
 	}
 
+	// Create memory import if one is required
 	std::optional<MemoryImport> memoryImport;
 	if (!importedMemoryTypes.empty()) {
 		memoryImport.emplace(std::move(importedMemoryTypes[0]));
@@ -149,6 +156,10 @@ void ModuleParser::parseHeader()
 
 void ModuleParser::parseSection()
 {
+	// Parse a module section starting with a type identifying byte
+	// and a u32 length
+	// https://webassembly.github.io/spec/core/binary/modules.html#sections
+
 	if (!hasNext()) {
 		throwParsingError("Expected section type byte");
 	}
@@ -176,11 +187,18 @@ void ModuleParser::parseSection()
 		it += length;
 	}
 
+	// Check that the whole section was consumed
 	assert(it == oldPos + length);
 }
 
 void ModuleParser::parseCustomSection(u32 length)
 {
+	// Custom sections consist of a name and uninterpreted
+	// bytes. The number of bytes is the size of the whole
+	// section minus the size of the name string. Name sections
+	// are special custom sections recognized by their name
+	// https://webassembly.github.io/spec/core/binary/modules.html#custom-section
+
 	if (!hasNext(length)) {
 		throwParsingError("Custom section is longer than available data");
 	}
@@ -202,12 +220,18 @@ void ModuleParser::parseCustomSection(u32 length)
 
 void ModuleParser::parseNameSection(BufferIterator endPos)
 {
+	// Name sections consist of multiple optional subsections which
+	// need to appear in order. Each subsection has an identifying byte and
+	// a u32 size.
+	// https://webassembly.github.io/spec/core/appendix/custom.html#name-section
+
 	std::optional<NameSubsectionType> prevSectionType;
 
 	while (it < endPos) {
 		auto type = NameSubsectionType::fromInt(nextU8());
 		auto length = nextU32();
 		
+		// Check order if there was a section parsed already before
 		if (prevSectionType.has_value() && type <= *prevSectionType) {
 			throwParsingError("Expected name subsection indices in increasing order");
 		}
@@ -244,6 +268,9 @@ void ModuleParser::parseNameSection(BufferIterator endPos)
 
 void ModuleParser::parseTypeSection()
 {
+	// The type section consist of a single vector of function types
+	// https://webassembly.github.io/spec/core/binary/modules.html#type-section
+
 	auto numFunctionTypes = nextU32();
 	functionTypes.reserve(functionTypes.size()+ numFunctionTypes);
 	for (u32 i = 0; i != numFunctionTypes; i++) {
@@ -258,6 +285,9 @@ void ModuleParser::parseTypeSection()
 
 void ModuleParser::parseFunctionSection()
 {
+	// The function section consists of a single vector of function indices
+	// https://webassembly.github.io/spec/core/binary/modules.html#function-section
+
 	auto numFunctions = nextU32();
 	functions.reserve(functions.size() + numFunctions);
 	for (u32 i = 0; i != numFunctions; i++) {
@@ -272,6 +302,9 @@ void ModuleParser::parseFunctionSection()
 
 void ModuleParser::parseTableSection()
 {
+	// The table section consists of a single vector of table types
+	// https://webassembly.github.io/spec/core/binary/modules.html#table-section
+
 	auto numTables = nextU32();
 	tableTypes.reserve(tableTypes.size() + numTables);
 	for (u32 i = 0; i != numTables; i++) {
@@ -286,6 +319,10 @@ void ModuleParser::parseTableSection()
 
 void ModuleParser::parseMemorySection()
 {
+	// The memory section consists of a single vector of memory types,
+	// even though only a single memory per module is supported right now
+	// https://webassembly.github.io/spec/core/binary/modules.html#memory-section
+
 	auto numMemories = nextU32();
 	memoryTypes.reserve(memoryTypes.size() + numMemories);
 	for (u32 i = 0; i != numMemories; i++) {
@@ -300,6 +337,9 @@ void ModuleParser::parseMemorySection()
 
 void ModuleParser::parseGlobalSection()
 {
+	// The global section consists of a single vector of globals
+	// https://webassembly.github.io/spec/core/binary/modules.html#global-section
+	
 	auto numGlobals = nextU32();
 	globals.reserve(globals.size() + numGlobals);
 	for (u32 i = 0; i != numGlobals; i++) {
@@ -314,6 +354,9 @@ void ModuleParser::parseGlobalSection()
 
 void ModuleParser::parseExportSection()
 {
+	// The export section consists of a single vector of exports
+	// https://webassembly.github.io/spec/core/binary/modules.html#export-section
+
 	auto numExports = nextU32();
 	exports.reserve(exports.size() + numExports);
 	for (u32 i = 0; i != numExports; i++) {
@@ -328,6 +371,10 @@ void ModuleParser::parseExportSection()
 
 void ModuleParser::parseStartSection()
 {
+	// The start section contains a single function index pointing to the
+	// module's start function
+	// https://webassembly.github.io/spec/core/binary/modules.html#start-section
+
 	auto idx = nextU32();
 	startFunctionIndex.emplace(idx);
 
@@ -338,6 +385,9 @@ void ModuleParser::parseStartSection()
 
 void ModuleParser::parseElementSection()
 {
+	// The element section consists of a single vector of elements
+	// https://webassembly.github.io/spec/core/binary/modules.html#element-section
+
 	auto numElements = nextU32();
 	elements.reserve(elements.size() + numElements);
 	for (u32 i = 0; i != numElements; i++) {
@@ -352,6 +402,9 @@ void ModuleParser::parseElementSection()
 
 void ModuleParser::parseCodeSection()
 {
+	// The code section consists of a single vector of function code items
+	// https://webassembly.github.io/spec/core/binary/modules.html#code-section
+
 	auto numFunctionCodes = nextU32();
 	functionCodes.reserve(functionCodes.size() + numFunctionCodes);
 	for (u32 i = 0; i != numFunctionCodes; i++) {
@@ -366,12 +419,21 @@ void ModuleParser::parseCodeSection()
 
 void ModuleParser::parseImportSection()
 {
+	// The import section consists of a single vector of imports. Each import
+	// starts with the name of the module to import from, followed by another name
+	// of the item to be imported. An identifying byte describes the type of item
+	// to be imported, followed by type specific data: eg. function imports declare
+	// a type index and global imports declare a global type
+	// https://webassembly.github.io/spec/core/binary/modules.html#import-section
+
 	auto numImports = nextU32();
 	for (u32 i = 0; i != numImports; i++) {
+		// Get the module name, item name and type common to all imports
 		auto moduleName = parseNameString();
 		auto itemName = parseNameString();
 		auto importType = ImportType::fromInt(nextU8());
 
+		// Parse each import type
 		switch (importType) {
 		case ImportType::FunctionImport: {
 			auto funcIdx = nextU32();
@@ -405,6 +467,10 @@ void ModuleParser::parseImportSection()
 
 ModuleParser::NameMap ModuleParser::parseNameMap()
 {
+	// Name maps are a vector of name associations, which consist of an index
+	// and a name each forming pairs. Indices have to appear in order.
+	// https://webassembly.github.io/spec/core/appendix/custom.html#name-maps
+
 	NameMap nameMap;
 
 	auto numNameAssoc = nextU32();
@@ -429,6 +495,11 @@ ModuleParser::NameMap ModuleParser::parseNameMap()
 
 ModuleParser::IndirectNameMap ModuleParser::parseIndirectNameMap()
 {
+	// Indirect name maps are a vector of indirect name associations, which consist of
+	// an index and a name map forming pairs. This creates a mapping of index -> index -> name
+	// as two map levels are formed. Indices have to appear in order.
+	// https://webassembly.github.io/spec/core/appendix/custom.html#name-maps
+
 	IndirectNameMap indirectMap;
 
 	auto numGroups = nextU32();
@@ -453,6 +524,10 @@ ModuleParser::IndirectNameMap ModuleParser::parseIndirectNameMap()
 
 FunctionType ModuleParser::parseFunctionType()
 {
+	// A function type is expected to start with the byte 0x60 followed
+	// by two result types, which are vectors of valtypes.
+	// https://webassembly.github.io/spec/core/binary/types.html#function-types
+
 	assertU8(0x60);
 
 	// Just append to the vector to keep the parameters
@@ -468,6 +543,11 @@ FunctionType ModuleParser::parseFunctionType()
 
 std::vector<ValType>& ModuleParser::parseResultTypeVector(bool doClearVector)
 {
+	// A result type is a vector of valtypes. Instead of allocating a new
+	// vector for each call of the method a common vector is recycled and 
+	// cleared each time.
+	// https://webassembly.github.io/spec/core/binary/types.html#result-types
+
 	if (doClearVector) {
 		cachedResultTypeVector.clear();
 	}
@@ -487,6 +567,10 @@ std::vector<ValType>& ModuleParser::parseResultTypeVector(bool doClearVector)
 
 TableType ModuleParser::parseTableType()
 {
+	// A table type consists of a ref type, which is a subset of
+	// valtypes, followed by a limits object.
+	// https://webassembly.github.io/spec/core/binary/types.html#table-types
+
 	if (!hasNext(3)) {
 		throwParsingError("Not enough bytes to parse table type");
 	}
@@ -502,6 +586,9 @@ TableType ModuleParser::parseTableType()
 
 MemoryType ModuleParser::parseMemoryType()
 {
+	// A memory type consists of a single limits object.
+	// https://webassembly.github.io/spec/core/binary/types.html#memory-types
+
 	if (!hasNext()) {
 		throwParsingError("Not enough bytes to parse memory type");
 	}
@@ -511,6 +598,10 @@ MemoryType ModuleParser::parseMemoryType()
 
 GlobalType ModuleParser::parseGlobalType()
 {
+	// Global types consist of a valtype followed by byte flag indicating
+	// whether the global is mutable.
+	// https://webassembly.github.io/spec/core/binary/types.html#global-types
+
 	if (!hasNext(3)) {
 		throwParsingError("Not enough bytes to parse global");
 	}
@@ -534,6 +625,10 @@ GlobalType ModuleParser::parseGlobalType()
 
 DeclaredGlobal ModuleParser::parseGlobal()
 {
+	// Each global consists of a global type object followed by a constant init 
+	// expression.
+	// https://webassembly.github.io/spec/core/binary/modules.html#global-section
+
 	auto globalType = parseGlobalType();
 	auto initExpressionCode = parseInitExpression();
 
@@ -542,6 +637,10 @@ DeclaredGlobal ModuleParser::parseGlobal()
 
 Limits ModuleParser::parseLimits()
 {
+	// A limits object starts with a byte flag inicating whether a max value
+	// is present. Either only a min value or a min and a max value follow.
+	// https://webassembly.github.io/spec/core/binary/types.html#limits
+
 	auto hasMaximum = nextU8();
 	if (hasMaximum == 0x00) {
 		auto mMin = nextU32();
@@ -559,6 +658,17 @@ Limits ModuleParser::parseLimits()
 
 Expression ModuleParser::parseInitExpression()
 {
+	// Init expressions are expressions which may only contain constant 
+	// instructions. They are therefore byte sequences of a small set of
+	// possible instructions. As loops, blocks and branches are not constant
+	// they may not have an nesting, which makes parsing them simpler as the
+	// first END marks their end.
+	// https://webassembly.github.io/spec/core/binary/instructions.html#expressions
+	// https://webassembly.github.io/spec/core/valid/instructions.html#constant-expressions
+
+	// FIXME: All constant instructions have a producing stack effect, which means
+	// that only a single instruction could ever be read in. So maybe ditch the vector
+
 	std::vector<Instruction> instructions;
 	auto beginPos = it;
 	while (hasNext()) {
@@ -617,6 +727,13 @@ Export ModuleParser::parseExport()
 
 Element ModuleParser::parseElement()
 {
+	// Each element can either be active, passive or declarative. Elements
+	// can have different structures that declare a type, either a vector of
+	// function indices or init expressions, and possibly a table index and offset
+	// expression. A u32 a the very beginning defines how the data needs to be
+	// interpreted. There are currently 8 interpretations recognized.
+	// https://webassembly.github.io/spec/core/binary/modules.html#element-section
+
 	const auto parseElementKind = [this]() {
 		if (nextU8() != 0x00) {
 			throwParsingError("Only element kind 'function reference' is supported");
@@ -705,10 +822,19 @@ Element ModuleParser::parseElement()
 
 FunctionCode ModuleParser::parseFunctionCode()
 {
+	// A function code item starts with its size in bytes, followed by
+	// a vector of locals. Each local has number of how many of its type
+	// exist and its type. This creates something comparable to run-length
+	// encoding for the local types which are decoded into a vector of
+	// compressed locals. After this an expression contains the actual
+	// body/code of the function.
+	// https://webassembly.github.io/spec/core/binary/modules.html#code-section
+
 	auto byteCount = nextU32();
 	auto posBeforeLocals = it;
 	auto numLocals = nextU32();
 	
+	// Read the locals
 	std::vector<CompressedLocalTypes> locals;
 	for (u32 i = 0; i != numLocals; i++) {
 		auto localCount = nextU32();
@@ -716,6 +842,8 @@ FunctionCode ModuleParser::parseFunctionCode()
 		locals.emplace_back(localCount, localType);
 	}
 
+	// Create buffer slice of the function body and convert it
+	// to an array of instructions
 	auto codeSlice = nextSliceTo(posBeforeLocals + byteCount);
 	if (codeSlice.isEmpty()) {
 		throwParsingError("Invalid funcion code item. Empty expression");
@@ -740,12 +868,14 @@ FunctionType::FunctionType(std::span<const ValType> parameters, std::span<const 
 	ValType* arrayPtr;
 	auto arrayLength = parameters.size() + results.size();
 	if (arrayLength <= LocalArray::maxStoredEntries) {
+		// Use the local array
 		auto& local = std::get<0>(storage);
 		local.numParameters = parameters.size();
 		local.numResults = results.size();
 		arrayPtr = local.array;
 	}
 	else {
+		// Allocate an array on the heap, because there are too many items to store locally
 		storage = HeapArray{
 		.array = std::make_unique<ValType[]>(arrayLength),
 		.numParameters = parameters.size(),
