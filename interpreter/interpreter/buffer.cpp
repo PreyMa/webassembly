@@ -67,6 +67,11 @@ Buffer& Buffer::operator=(Buffer&& other) noexcept
 	return *this;
 }
 
+bool Buffer::hasInRange(const u8* ptr) const
+{
+	return mData.data() <= ptr && ptr < (mData.data() + size());
+}
+
 void Buffer::appendU8(u8 val)
 {
 	mData.push_back(val);

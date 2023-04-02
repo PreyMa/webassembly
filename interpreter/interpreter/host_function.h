@@ -9,11 +9,12 @@ namespace WASM {
 	class HostFunctionBase : public Function {
 	public:
 
-		HostFunctionBase(FunctionType);
+		HostFunctionBase(u32, FunctionType);
 
 		virtual const FunctionType& functionType() const final { return mFunctionType; }
 		virtual Nullable<const HostFunctionBase> asHostFunction() const final { return *this; }
 
+		void setIndex(u32 idx) { mIndex = idx; }
 		void print(std::ostream&) const;
 
 	protected:
@@ -27,7 +28,7 @@ namespace WASM {
 
 		template<typename TLambda>
 		HostFunction(TLambda lambda)
-			: HostFunctionBase{ toFunctionType() }, function{ std::move(lambda) } {}
+			: HostFunctionBase{ -1, toFunctionType() }, function{ std::move(lambda) } {}
 
 	protected:
 		FunctionType toFunctionType() const {

@@ -10,8 +10,8 @@
 
 using namespace WASM;
 
-HostFunctionBase::HostFunctionBase(FunctionType ft)
-	: mFunctionType{ std::move(ft) } {}
+HostFunctionBase::HostFunctionBase(u32 idx, FunctionType ft)
+	: Function{ idx }, mFunctionType { std::move(ft) } {}
 
 void HostFunctionBase::print(std::ostream& out) const {
 	out << "Host function: ";
@@ -119,18 +119,160 @@ u32 Interpreter::indexOfDeduplicatedFunctionType(FunctionType& funcType) const
 	return findIt - beginIt;
 }
 
+void Interpreter::initState(const BytecodeFunction& function)
+{
+	if (mStackBase) {
+		return;
+	}
+
+	// FIXME: Do not hard code the stack size
+	mStackBase = std::make_unique<u32[]>(4096);
+
+	mInstructionPointer = function.bytecode().begin();
+	mStackPointer = mStackBase.get();
+	mFramePointer = mStackBase.get();
+	mModulePointer = nullptr;
+}
+
+void Interpreter::saveState(const u8* ip, u32* sp, u32* fp, Module* mp)
+{
+	mInstructionPointer = ip;
+	mStackPointer = sp;
+	mFramePointer = fp;
+	mModulePointer = mp;
+}
+
+void Interpreter::dumpStack(std::ostream& out) const
+{
+	auto framePointer = mFramePointer;
+	auto stackPointer = mStackPointer;
+	auto modulePointer = mModulePointer;
+	auto instructionPointer = mInstructionPointer;
+
+	// Count the number of stack frames first
+	u32 frameCount = 0;
+	while (framePointer) {
+		frameCount++;
+		framePointer = *(reinterpret_cast<u32**>(framePointer) + 1);
+	}
+
+	out << std::hex;
+
+	// Print each stack frame
+	framePointer = mFramePointer;
+	auto frameIdx = frameCount;
+	while (framePointer) {
+		auto prevInstructionPointer= *(reinterpret_cast<u8**>(framePointer) + 0);
+		auto prevFramePointer= *(reinterpret_cast<u32**>(framePointer) + 1);
+		auto prevStackPointer= *(reinterpret_cast<u32**>(framePointer) + 2);
+		auto prevModulePointer= *(reinterpret_cast<Module**>(framePointer) + 3);
+
+		out << "Frame " << --frameIdx;
+		if (frameIdx == frameCount - 1) {
+			out << " (top)";
+		}
+		else if (!frameIdx) {
+			out << " (bottom)";
+		}
+
+		out << " FP: " << framePointer << " SP: " << stackPointer << " MP: " << modulePointer << std::endl;
+		auto lookup= findFunctionByBytecodePointer(instructionPointer);
+		if (!lookup.has_value()) {
+			out << "Stack corruption error: Unknown function for address: " << (u64)instructionPointer << std::endl;
+			return;
+		}
+
+		auto bytecodeFunction = lookup->function.asBytecodeFunction();
+		auto functionName = lookup->function.lookupName(lookup->module);
+		if (bytecodeFunction.has_value()) {
+			out << "Function: " << bytecodeFunction->index() << " at " << bytecodeFunction.pointer();
+			if (functionName.has_value()) {
+				out << " (" << *functionName << ")";
+			}
+
+			auto numParameters = bytecodeFunction->functionType().parameters().size();
+			auto numLocals = bytecodeFunction->localsCount();
+
+			out << " Parameters: " << numParameters;
+			out << " Locals: " << numLocals;
+			out << " Results: " << bytecodeFunction->functionType().results().size() << std::endl;
+
+			u32 stackPointerOffset = 0;
+			auto printSingleStackSlot = [&](const char* const name) {
+				out << "  " << (u64)--stackPointer << " (-" << std::setw(2) << ++stackPointerOffset << ") " << name << ": " << *stackPointer << std::endl;
+			};
+
+			auto printDoubleStackSlot = [&](const char* const name) {
+				out << "  " << (u64)--stackPointer << " (-" << std::setw(2) << ++stackPointerOffset << ")" << std::endl;
+				out << "  " << (u64)--stackPointer << " (-" << std::setw(2) << ++stackPointerOffset << ") " << name << ": " << *reinterpret_cast<u64**>(stackPointer) << std::endl;
+			};
+
+			auto printTypedLocals = [&](const char* const name, i32 endIdx, i32 beginIdx) {
+				for (i32 i = endIdx - 1; i >= beginIdx; i--) {
+					auto localOffset = bytecodeFunction->localOrParameterByIndex(i);
+					assert(localOffset.has_value());
+					if (localOffset->type.sizeInBytes() == 4) {
+						printSingleStackSlot(name);
+					}
+					else if (localOffset->type.sizeInBytes() == 8) {
+						printDoubleStackSlot(name);
+					}
+					else {
+						out << "Only types with 32bit or 64bit are supported" << std::endl;
+					}
+				}
+			};
+			
+			auto operandSlotsEnd = prevStackPointer + bytecodeFunction->operandStackSectionOffsetInBytes()/4;
+			while (stackPointer > operandSlotsEnd) {
+				printSingleStackSlot("Operand");
+			}
+
+			printTypedLocals("Local", numLocals+ numParameters, numParameters);
+			
+			printDoubleStackSlot("   MP");
+			printDoubleStackSlot("   SP");
+			printDoubleStackSlot("   FP");
+			printDoubleStackSlot("   RA");
+
+			printTypedLocals("Param", numParameters, 0);
+		}
+		else {
+			out << "Host functions not supported for dumping" << std::endl;
+			return;
+		}
+
+		instructionPointer = prevInstructionPointer;
+		framePointer = prevFramePointer;
+		stackPointer = prevStackPointer;
+		modulePointer = prevModulePointer;
+	}
+
+	out << std::dec;
+}
+
+std::optional<Interpreter::FunctionLookup> Interpreter::findFunctionByBytecodePointer(const u8* bytecodePointer) const
+{
+	for (auto& module : modules) {
+		auto function = module.findFunctionByBytecodePointer(bytecodePointer);
+		if (function.has_value()) {
+			return FunctionLookup{*function, module};
+		}
+	}
+
+	return {};
+}
+
 ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std::span<Value> parameters)
 {
 	assert(!isInterpreting);
 	isInterpreting = true;
 
-	// FIXME: Do not hard code the stack size
-	stackBase = std::make_unique<u32[]>(4096);
-
-	const u8* instructionPointer = function.bytecode().begin();
-	u32* stackPointer = stackBase.get();
-	u32* framePointer = stackBase.get();
-	Module* modulePointer = nullptr;
+	initState(function);
+	const u8* instructionPointer = mInstructionPointer;
+	u32* stackPointer = mStackPointer;
+	u32* framePointer = mFramePointer;
+	Module* modulePointer = mModulePointer;
 
 	auto loadOperandU32 = [&]() -> u32 [[msvc::forceinline]] {
 		u32 operand = *reinterpret_cast<const u32*>(instructionPointer);
@@ -196,10 +338,10 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 
 	framePointer = stackPointer; // Put FP after the parameters
 
-	// Push frame data to stace
+	// Push frame data to stace -> RA, FP, SP, MP
 	pushPtr(0x00);
-	pushPtr(framePointer);
-	pushPtr(stackBase.get());
+	pushPtr(0x00);
+	pushPtr(mStackBase.get());
 	pushPtr(modulePointer);
 
 	u64 opA, opB, opC;
@@ -277,7 +419,7 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 
 			if (!instructionPointer) {
 				std::cout << "Execution finished" << std::endl;
-				return ValuePack{ function.functionType(), true, {stackBase.get(), (sizeType)(stackPointer - stackBase.get())} };
+				return ValuePack{ function.functionType(), true, {mStackBase.get(), (sizeType)(stackPointer - mStackBase.get())} };
 			}
 			continue;
 		}
@@ -289,7 +431,7 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			auto stackPointerToSave = stackPointer - stackParameterSection;
 			auto newFramePointer = stackPointer;
 
-			if (callee->maxStackHeight() + stackPointer > stackBase.get() + 4069) {
+			if (callee->maxStackHeight() + stackPointer > mStackBase.get() + 4069) {
 				throw std::runtime_error{ "Stack overflow" };
 			}
 
@@ -492,6 +634,8 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			opB = popU32();
 			opA = popU32();
 			pushU32(opA+ opB);
+			saveState(instructionPointer, stackPointer, framePointer, modulePointer);
+			dumpStack(std::cout);
 			continue;
 		case BC::I32Subtract:
 			opB = popU32();

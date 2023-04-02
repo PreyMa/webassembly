@@ -13,27 +13,34 @@ namespace WASM {
 
 	class Function {
 	public:
+		Function(u32 idx) : mIndex{ idx } {}
 		virtual ~Function() = default;
+
+		u32 index() const { return mIndex; }
+		Nullable<const std::string> lookupName(const Module&) const;
 
 		virtual Nullable<const BytecodeFunction> asBytecodeFunction() const { return {}; }
 		virtual Nullable<const HostFunctionBase> asHostFunction() const { return {}; }
 		virtual const FunctionType& functionType() const = 0;
 
-	private:
+	protected:
+		u32 mIndex;
 	};
 
-	class BytecodeFunction : public Function {
+	class BytecodeFunction final : public Function {
 	public:
 		struct LocalOffset {
 			ValType type;
 			u32 offset;
 		};
 
+		// size of RA + FP + SP + MP
+		static constexpr u32 SpecialFrameBytes = 32;
+
 		BytecodeFunction(u32 idx, u32 ti, FunctionType& t, FunctionCode&& c);
 
 		virtual Nullable<const BytecodeFunction> asBytecodeFunction() const { return *this; }
 
-		u32 index() const { return mIndex; }
 		u32 moduleBaseTypeIndex() const { return mModuleBasedTypeIndex; }
 		u32 deduplicatedTypeIndex() const { return mDeduplicatedTypeIndex; }
 		const Expression& expression() const { return code; }
@@ -46,18 +53,16 @@ namespace WASM {
 		const Buffer& bytecode() const { return mBytecode; }
 		void setBytecode(Buffer b) { mBytecode = std::move(b); }
 
-		std::optional<LocalOffset> localByIndex(u32) const;
+		std::optional<LocalOffset> localOrParameterByIndex(u32) const;
 		bool hasLocals() const;
+		u32 localsCount() const;
 		u32 operandStackSectionOffsetInBytes() const;
 		u32 localsSizeInBytes() const;
 		bool requiresModuleInstance() const;
 
-		Nullable<const std::string> lookupName(const Module&);
-
 	private:
 		void uncompressLocalTypes(const std::vector<CompressedLocalTypes>&);
 
-		u32 mIndex;
 		u32 mModuleBasedTypeIndex;
 		u32 mDeduplicatedTypeIndex{ 0 };
 		NonNull<FunctionType> type;
@@ -193,6 +198,8 @@ namespace WASM {
 		Nullable<FunctionTable> tableByIndex(u32);
 		Nullable<BytecodeFunction> startFunction() const { return mStartFunction; }
 		Nullable<Memory> memoryWithIndexZero() const { return linkedMemory; }
+
+		Nullable<const Function> findFunctionByBytecodePointer(const u8*) const;
 
 		std::optional<ExportItem> exportByName(const std::string&, ExportType) const;
 		Nullable<Function> exportedFunctionByName(const std::string&);

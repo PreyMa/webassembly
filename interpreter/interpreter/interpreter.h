@@ -75,11 +75,21 @@ namespace WASM {
 		friend class ModuleLinker;
 		friend class ModuleCompiler;
 
+		struct FunctionLookup {
+			const Function& function;
+			const Module& module;
+		};
+
 		ValuePack executeFunction(Function&, std::span<Value>);
 		ValuePack runInterpreterLoop(const BytecodeFunction&, std::span<Value>);
 
 		Nullable<Function> findFunction(const std::string&, const std::string&);
 		u32 indexOfDeduplicatedFunctionType(FunctionType&) const;
+
+		void initState(const BytecodeFunction& function);
+		void saveState(const u8*, u32*, u32*, Module*);
+		void dumpStack(std::ostream&) const;
+		std::optional<FunctionLookup> findFunctionByBytecodePointer(const u8*) const;
 
 		std::vector<Module> modules;
 		std::unordered_map<std::string, Nullable<Module>> moduleNameMap;
@@ -87,7 +97,11 @@ namespace WASM {
 
 		bool hasLinked{ false };
 		bool isInterpreting{ false };
-		std::unique_ptr<u32[]> stackBase;
+		std::unique_ptr<u32[]> mStackBase;
+		u32* mStackPointer;
+		u32* mFramePointer;
+		Module* mModulePointer;
+		const u8* mInstructionPointer;
 
 		std::unique_ptr<Introspector> attachedIntrospector;
 	};

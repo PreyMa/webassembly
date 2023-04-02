@@ -13,12 +13,17 @@ static constexpr inline bool isShortDistance(i32 distance) {
 	return distance >= -128 && distance <= 127;
 }
 
+Nullable<const std::string> Function::lookupName(const Module& module) const
+{
+	return module.functionNameByIndex(mIndex);
+}
+
 BytecodeFunction::BytecodeFunction(u32 idx, u32 ti, FunctionType& ft, FunctionCode&& c)
-	: mIndex{ idx }, mModuleBasedTypeIndex{ ti }, type{ft}, code{ std::move(c.code) } {
+	: Function{ idx }, mModuleBasedTypeIndex{ ti }, type{ft}, code{ std::move(c.code) } {
 	uncompressLocalTypes(c.compressedLocalTypes);
 }
 
-std::optional<BytecodeFunction::LocalOffset> BytecodeFunction::localByIndex(u32 idx) const
+std::optional<BytecodeFunction::LocalOffset> BytecodeFunction::localOrParameterByIndex(u32 idx) const
 {
 	if (idx < uncompressedLocals.size()) {
 		return uncompressedLocals[idx];
@@ -32,10 +37,19 @@ bool BytecodeFunction::hasLocals() const
 	return type->parameters().size() < uncompressedLocals.size();
 }
 
+u32 BytecodeFunction::localsCount() const
+{
+	if (!hasLocals()) {
+		return 0;
+	}
+
+	return uncompressedLocals.size() - type->parameters().size();
+}
+
 u32 BytecodeFunction::operandStackSectionOffsetInBytes() const
 {
 	if (uncompressedLocals.empty()) {
-		return 0;
+		return SpecialFrameBytes;
 	}
 
 	auto& lastLocal = uncompressedLocals.back();
@@ -43,7 +57,7 @@ u32 BytecodeFunction::operandStackSectionOffsetInBytes() const
 
 	// Manually add the size of RA + FP + SP + MP, if there are only parameters
 	if (!hasLocals()) {
-		byteOffset += 32;
+		byteOffset += SpecialFrameBytes;
 	}
 
 	return byteOffset;
@@ -72,11 +86,6 @@ bool BytecodeFunction::requiresModuleInstance() const
 	return false;
 }
 
-Nullable<const std::string> BytecodeFunction::lookupName(const Module& module)
-{
-	return module.functionNameByIndex(mIndex);
-}
-
 void BytecodeFunction::uncompressLocalTypes(const std::vector<CompressedLocalTypes>& compressedLocals)
 {
 	// Count the parameters and locals
@@ -96,7 +105,7 @@ void BytecodeFunction::uncompressLocalTypes(const std::vector<CompressedLocalTyp
 	}
 
 	// Leave space for return address, stack, frame and module pointer
-	byteOffset += 32;
+	byteOffset += SpecialFrameBytes;
 
 	// Decompress and put each local
 	for (auto& pack : compressedLocals) {
@@ -396,6 +405,17 @@ Nullable<FunctionTable> WASM::Module::tableByIndex(u32 idx)
 	return functionTables[idx];
 }
 
+Nullable<const Function> Module::findFunctionByBytecodePointer(const u8* pointer) const
+{
+	for (auto& func : functions) {
+		if (func.bytecode().hasInRange(pointer)) {
+			return func;
+		}
+	}
+
+	return {};
+}
+
 std::optional<ExportItem> Module::exportByName(const std::string& name, ExportType type) const
 {
 	auto findFunction = exports.find(name);
@@ -458,6 +478,7 @@ void ModuleLinker::link()
 	assert(modules[0].compilationData->importedFunctions.size() == 1);
 
 	static HostFunction abortFunction = [&](u32, u32, u32, u32) { std::cout << "Abort called"; };
+	abortFunction.setIndex(0);
 	std::cout << "Registered function: ";
 	abortFunction.print(std::cout);
 	std::cout << std::endl;
@@ -733,7 +754,7 @@ BytecodeFunction::LocalOffset ModuleCompiler::localByIndex(u32 idx) const
 {
 	assert(currentFunction);
 
-	auto local = currentFunction->localByIndex(idx);
+	auto local = currentFunction->localOrParameterByIndex(idx);
 	if (local.has_value()) {
 		return *local;
 	}

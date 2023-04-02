@@ -71,6 +71,7 @@ namespace WASM {
 
 		sizeType size() const { return mData.size(); }
 		bool isEmpty() const { return mData.size() == 0; }
+		bool hasInRange(const u8*) const;
 
 		void clear() { mData.clear(); }
 
