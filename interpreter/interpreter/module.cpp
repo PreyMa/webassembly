@@ -1131,8 +1131,8 @@ void ModuleCompiler::printBytecodeExpectingNoArgumentsIfReachable(Instruction in
 void ModuleCompiler::printLocalGetSetTeeBytecodeIfReachable(
 	BytecodeFunction::LocalOffset local,
 	Bytecode near32,
-	Bytecode near64,
 	Bytecode far32,
+	Bytecode near64,
 	Bytecode far64
 )
 {

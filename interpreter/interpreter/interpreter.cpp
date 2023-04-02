@@ -319,6 +319,14 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 		return reinterpret_cast<void**>(framePointer)[offset];
 	};
 
+	auto loadU64WithStackOffset = [&](u32 offset) -> u64 [[msvc::forceinline]] {
+		return *reinterpret_cast<u64*>(stackPointer - offset);
+	};
+
+	auto storeU64WithStackOffset = [&](u32 offset, u64 value) -> void [[msvc::forceinline]] {
+		*reinterpret_cast<u64*>(stackPointer - offset)= value;
+	};
+
 	// Check stack
 	assert(function.maxStackHeight() < 4096);
 
@@ -470,15 +478,30 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			instructionPointer++;
 			continue;
 		case BC::I32Select:
+			opC = popU32();
+			opB = popU32();
+			opA = popU32();
+			pushU32( opC ? opA : opB );
+			continue;
 		case BC::I64Select:
-			break;
+			opC = popU32();
+			opB = popU64();
+			opA = popU64();
+			pushU64(opC ? opA : opB);
+			continue;
 		case BC::I32LocalGetFar:
 			opA = loadOperandU32();
 			pushU32(stackPointer[-opA]);
 			continue;
 		case BC::I32LocalSetFar:
+			opA = loadOperandU32();
+			stackPointer[-opA] = popU32();
+			continue;
 		case BC::I32LocalTeeFar:
-			break;
+			opA = loadOperandU32();
+			opB = stackPointer[-1];
+			stackPointer[-opA] = opB;
+			continue;
 		case BC::I32LocalGetNear:
 			opA = *(instructionPointer++);
 			pushU32(stackPointer[-opA]);
@@ -488,13 +511,36 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			stackPointer[-opA]= popU32();
 			continue;
 		case BC::I32LocalTeeNear:
+			opA = *(instructionPointer++);
+			opB = stackPointer[-1];
+			stackPointer[-opA] = opB;
+			continue;
 		case BC::I64LocalGetFar:
+			opA = loadOperandU32();
+			pushU64(loadU64WithStackOffset(opA));
+			continue;
 		case BC::I64LocalSetFar:
+			opA = loadOperandU32();
+			storeU64WithStackOffset(opA, popU64());
+			continue;
 		case BC::I64LocalTeeFar:
+			opA = loadOperandU32();
+			opB = loadU64WithStackOffset(2);
+			storeU64WithStackOffset(opA, opB);
+			continue;
 		case BC::I64LocalGetNear:
+			opA = *(instructionPointer++);
+			pushU64(loadU64WithStackOffset(opA));
+			continue;
 		case BC::I64LocalSetNear:
+			opA = *(instructionPointer++);
+			storeU64WithStackOffset(opA, popU64());
+			continue;
 		case BC::I64LocalTeeNear:
-			break;
+			opA = *(instructionPointer++);
+			opB = loadU64WithStackOffset(2);
+			storeU64WithStackOffset(opA, opB);
+			continue;
 		case BC::I32GlobalGet: {
 			auto ptr = (u32*)loadOperandPtr();
 			pushU32(*ptr);
@@ -577,9 +623,19 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			pushU32(loadOperandU64());
 			continue;
 		case BC::I32EqualZero:
+			opA = popU32();
+			pushU32(opA == 0);
+			continue;
 		case BC::I32Equal:
+			opA = popU32();
+			opB = popU32();
+			pushU32(opA == opB);
+			continue;
 		case BC::I32NotEqual:
-			break;
+			opA = popU32();
+			opB = popU32();
+			pushU32(opA != opB);
+			continue;
 		case BC::I32LesserS:
 			opB = popU32();
 			opA = popU32();
@@ -595,25 +651,85 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			opA = popU32();
 			pushU32((i32)opA > (i32)opB);
 			continue;
-		case BC::I32GreaterU:opB = popU32();
+		case BC::I32GreaterU:
+			opB = popU32();
 			opA = popU32();
 			pushU32(opA > opB);
 			continue;
 		case BC::I32LesserEqualS:
+			opB = popU32();
+			opA = popU32();
+			pushU32((i32)opA <= (i32)opB);
+			continue;
 		case BC::I32LesserEqualU:
+			opB = popU32();
+			opA = popU32();
+			pushU32(opA <= opB);
+			continue;
 		case BC::I32GreaterEqualS:
+			opB = popU32();
+			opA = popU32();
+			pushU32((i32)opA >= (i32)opB);
+			continue;
 		case BC::I32GreaterEqualU:
+			opB = popU32();
+			opA = popU32();
+			pushU32(opA >= opB);
+			continue;
 		case BC::I64EqualZero:
+			opA = popU64();
+			pushU32(opA == 0);
+			continue;
 		case BC::I64Equal:
+			opA = popU64();
+			opB = popU64();
+			pushU32(opA == opB);
+			continue;
 		case BC::I64NotEqual:
+			opA = popU64();
+			opB = popU64();
+			pushU32(opA != opB);
+			continue;
 		case BC::I64LesserS:
+			opB = popU64();
+			opA = popU64();
+			pushU32((i64)opA < (i64)opB);
+			continue;
 		case BC::I64LesserU:
+			opB = popU64();
+			opA = popU64();
+			pushU32(opA < opB);
+			continue;
 		case BC::I64GreaterS:
+			opB = popU64();
+			opA = popU64();
+			pushU32((i64)opA > (i64)opB);
+			continue;
 		case BC::I64GreaterU:
+			opB = popU64();
+			opA = popU64();
+			pushU32(opA > opB);
+			continue;
 		case BC::I64LesserEqualS:
+			opB = popU64();
+			opA = popU64();
+			pushU32((i64)opA <= (i64)opB);
+			continue;
 		case BC::I64LesserEqualU:
+			opB = popU64();
+			opA = popU64();
+			pushU32(opA <= opB);
+			continue;
 		case BC::I64GreaterEqualS:
+			opB = popU64();
+			opA = popU64();
+			pushU32((i64)opA >= (i64)opB);
+			continue;
 		case BC::I64GreaterEqualU:
+			opB = popU64();
+			opA = popU64();
+			pushU32(opA >= opB);
+			continue;
 		case BC::F32Equal:
 		case BC::F32NotEqual:
 		case BC::F32Lesser:
@@ -634,8 +750,6 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			opB = popU32();
 			opA = popU32();
 			pushU32(opA+ opB);
-			saveState(instructionPointer, stackPointer, framePointer, modulePointer);
-			dumpStack(std::cout);
 			continue;
 		case BC::I32Subtract:
 			opB = popU32();
@@ -703,6 +817,10 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 		case BC::I64CountTrailingZeros:
 		case BC::I64CountOnes:
 		case BC::I64Add:
+			opB = popU64();
+			opA = popU64();
+			pushU64(opA + opB);
+			continue;
 		case BC::I64Subtract:
 		case BC::I64Multiply:
 		case BC::I64DivideS:
