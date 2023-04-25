@@ -1023,6 +1023,12 @@ void Limits::print(std::ostream& out) const
 
 bool Limits::isValid(u32 range) const
 {
+	// The min value must be smaller or equal to the specified range for a 
+	// limit to be valid. Further it must be smaller or equal to the max
+	// value if one is present. The max value must also be smaller or equal
+	// to the specified range, or be not present.
+	// https://webassembly.github.io/spec/core/valid/types.html#valid-limits
+
 	if (mMin > range) {
 		return false;
 	}
@@ -1054,6 +1060,11 @@ void DeclaredGlobal::print(std::ostream& out) const
 
 bool Export::isValid(u32 numFunctions, u32 numTables, u32 numMemories, u32 numGlobals) const
 {
+	// Validating an export has to validate the external type it exports. As each declared type in the module
+	// is validated separately it only needs to be checked whether the export references a valid type.
+	// https://webassembly.github.io/spec/core/valid/modules.html#exports
+	// https://webassembly.github.io/spec/core/valid/types.html#external-types
+
 	switch (mExportType) {
 	case ExportType::FunctionIndex: return mIndex < numFunctions;
 	case ExportType::TableIndex: return mIndex < numTables;
@@ -1214,6 +1225,10 @@ u64 Expression::constantUntypedValue(Module& module) const
 
 void ModuleValidator::validate(const ParsingState& parser)
 {
+	// Validate the parsed module state by validating all of its parts
+	// under the context C and the reduced context C'
+	// https://webassembly.github.io/spec/core/valid/modules.html#valid-module
+
 	parsingState = &parser;
 
 	if (introspector.has_value()) {
@@ -1296,6 +1311,12 @@ const FunctionType& ModuleValidator::functionTypeByIndex(u32 funcIdx)
 
 void ModuleValidator::validateFunction(u32 funcNum)
 {
+	// Validating a function checks whether it references a valid
+	// function type. Further its expression has to be checked, however
+	// this is done by the compiler. Function types are always valid.
+	// https://webassembly.github.io/spec/core/valid/modules.html#functions
+	// https://webassembly.github.io/spec/core/valid/types.html#function-types
+
 	auto typeIdx = s().functions[funcNum];
 	if (typeIdx > s().functionTypes.size()) {
 		throwValidationError("Function references invalid type index");
@@ -1311,6 +1332,11 @@ void ModuleValidator::validateFunction(u32 funcNum)
 
 void ModuleValidator::validateTableType(const TableType& tableType)
 {
+	// Validating a table (type) checks whether the limit is valid within the range
+	// 0...2^32-1
+	// https://webassembly.github.io/spec/core/valid/modules.html#tables
+	// https://webassembly.github.io/spec/core/valid/types.html#table-types
+
 	constexpr u32 tableRange = 0xFFFFFFFF;
 	if (!tableType.limits().isValid(tableRange)) {
 		throwValidationError("Invalid table limits definition");
@@ -1323,7 +1349,12 @@ void ModuleValidator::validateTableType(const TableType& tableType)
 
 void ModuleValidator::validateMemoryType(const MemoryType& memoryType)
 {
-	constexpr u32 memoryRange = 0xFFFF;
+	// Validating a memory (type) checks whether the limit is valid within the range
+	// 0...2^16
+	// https://webassembly.github.io/spec/core/valid/modules.html#memories
+	// https://webassembly.github.io/spec/core/valid/types.html#memory-types
+
+	constexpr u32 memoryRange = 0x10000;
 	if (!memoryType.limits().isValid(memoryRange)) {
 		throwValidationError("Invalid range limits definition");
 	}
@@ -1335,6 +1366,11 @@ void ModuleValidator::validateMemoryType(const MemoryType& memoryType)
 
 void ModuleValidator::validateExport(const Export& exportItem)
 {
+	// To validate an export, the exported item has to be validated. The name of
+	// the export also has to be unique.
+	// https://webassembly.github.io/spec/core/valid/modules.html#exports
+	// https://webassembly.github.io/spec/core/syntax/modules.html#exports
+
 	auto numFunctions = s().functions.size() + s().importedFunctions.size();
 	auto numTables = s().tableTypes.size() + s().importedTableTypes.size();
 	auto numMemories = s().memoryTypes.size() + s().importedMemoryTypes.size();
@@ -1356,6 +1392,11 @@ void ModuleValidator::validateExport(const Export& exportItem)
 
 void ModuleValidator::validateStartFunction(u32 idx)
 {
+	// To validate the start function it has to be checked whether the function index references
+	// a valid function. Further the function type has to be [] -> [] (no parameters, no return
+	// value).
+	// https://webassembly.github.io/spec/core/valid/modules.html#start-function
+
 	auto& funcType = functionTypeByIndex(idx);
 	if (!funcType.takesVoidReturnsVoid()) {
 		throwValidationError("Start function has wrong type");
@@ -1368,6 +1409,10 @@ void ModuleValidator::validateStartFunction(u32 idx)
 
 void ModuleValidator::validateGlobal(const DeclaredGlobal& global)
 {
+	// For a global to be valid, its type has to be valid. The init expression has to be 
+	// constant, valid and has to result in a type compatible with the global's type.
+	// https://webassembly.github.io/spec/core/valid/modules.html#globals
+
 	validateConstantExpression(global.initExpression(), global.valType());
 
 	if (introspector.has_value()) {
@@ -1377,6 +1422,15 @@ void ModuleValidator::validateGlobal(const DeclaredGlobal& global)
 
 void ModuleValidator::validateElementSegment(const Element& elem)
 {
+	// For a element segement to be valid, each init expression has to be constant, valid and
+	// result in a type compatible with the table type. Further, the element mode has to be
+	// valid:
+	// - Passive mode: Always valid.
+	// - Active mode: The element has to reference a valid table. The element's table offset expression
+	//   has to be constant, valid and result in a I32.
+	// - Declarative mode: Always valid.
+	// https://webassembly.github.io/spec/core/valid/modules.html#element-segments
+
 	auto initExpressions = elem.initExpressions();
 	if (initExpressions.has_value()) {
 		for (auto& expr : *initExpressions) {
@@ -1416,6 +1470,13 @@ void ModuleValidator::validateElementSegment(const Element& elem)
 
 void ModuleValidator::validateImports()
 {
+	// Each import is validated based on the kind of imported item.
+	// - Function: The import has to reference a valid function type by index.
+	// - Table: The table type has to be valid.
+	// - Memory: The memory type has to be valid.
+	// - Global: The global type has to be valid.
+	// https://webassembly.github.io/spec/core/valid/modules.html#imports
+
 	if (introspector.has_value()) {
 		introspector->onModulImportsValidationStart();
 	}
@@ -1441,6 +1502,12 @@ void ModuleValidator::validateImports()
 
 void ModuleValidator::validateConstantExpression(const Expression& exp, ValType expectedType)
 {
+	// For an expression to be constant and valid, all of its instruction have to be constant.
+	// The last instruction has to be an 'End' instruction. The instructions may have a stack
+	// effect. At the end of the expression only one value may be on the stack, which has to 
+	// have a type compatible with the specified expected result type.
+	// https://webassembly.github.io/spec/core/valid/instructions.html#constant-expressions
+
 	// Only instructions that return something on the stack are allowed, and only
 	// one result [t] is expected on the stack. Therefore, only one instruction plus
 	// 'End' can occur
