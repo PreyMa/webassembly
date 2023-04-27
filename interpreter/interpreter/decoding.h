@@ -243,7 +243,8 @@ namespace WASM {
 	};
 
 	struct FunctionImport final : public Imported {
-		u32 functionTypeIndex;
+		u32 moduleBasedFunctionTypeIndex;
+		u32 deduplicatedFunctionTypeIndex{ 0 };
 		Nullable<Function> resolvedFunction;
 	};
 

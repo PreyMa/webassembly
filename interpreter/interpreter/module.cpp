@@ -512,16 +512,28 @@ void ModuleLinker::buildDeduplicatedFunctionTypeTable()
 		}
 	}
 
+	const auto findDedupedFunctionType = [&](const Module& module, u32 typeIdx) {
+		assert(typeIdx < module.compilationData->functionTypes.size());
+		auto& type = module.compilationData->functionTypes[typeIdx];
+
+		auto findIt = std::find(dedupedFunctionTypes.begin(), dedupedFunctionTypes.end(), type);
+		assert(findIt != dedupedFunctionTypes.end());
+		return findIt;
+	};
+
 	for (auto& module : modules) {
 		for (auto& function : module.functions) {
 			auto typeIdx = function.moduleBaseTypeIndex();
-			assert(typeIdx < module.compilationData->functionTypes.size());
-			auto& type = module.compilationData->functionTypes[typeIdx];
-
-			auto findIt = std::find(dedupedFunctionTypes.begin(), dedupedFunctionTypes.end(), type);
-			assert(findIt != dedupedFunctionTypes.end());
+			auto findIt = findDedupedFunctionType(module, typeIdx);
 
 			function.setLinkedFunctionType( findIt - dedupedFunctionTypes.begin(), *findIt);
+		}
+
+		for (auto& functionImport : module.compilationData->importedFunctions) {
+			assert(functionImport.deduplicatedFunctionTypeIndex == 0);
+			auto findIt = findDedupedFunctionType(module, functionImport.moduleBasedFunctionTypeIndex);
+
+			functionImport.deduplicatedFunctionTypeIndex = findIt - dedupedFunctionTypes.begin();
 		}
 	}
 

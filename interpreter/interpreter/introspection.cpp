@@ -223,9 +223,10 @@ void DebugLogger::onParsingImportSection(
 			stream << "  - " << type.name() << ": " << imported.module << " :: " << imported.name;
 		};
 
+		u32 i = 0;
 		for (auto& funcImport : functionImports) {
 			printImport(ImportType::FunctionImport, funcImport);
-			stream << " indexing: " << funcImport.functionTypeIndex << std::endl;
+			stream << " (id: " << i++ << ") indexing type: " << funcImport.moduleBasedFunctionTypeIndex << std::endl;
 		}
 
 		for (auto& tableImport : tableImports) {

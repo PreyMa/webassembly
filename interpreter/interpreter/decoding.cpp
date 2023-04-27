@@ -1304,7 +1304,7 @@ const FunctionType& ModuleValidator::functionTypeByIndex(u32 funcIdx)
 {
 	u32 typeIdx;
 	if (funcIdx < s().importedFunctions.size()) {
-		typeIdx= s().importedFunctions[funcIdx].functionTypeIndex;
+		typeIdx= s().importedFunctions[funcIdx].moduleBasedFunctionTypeIndex;
 	}
 
 	funcIdx -= s().importedFunctions.size();
