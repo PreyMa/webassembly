@@ -22,6 +22,8 @@ namespace WASM {
 		~ArrayList() = default;
 
 		sizeType add(T value) {
+			numStoredEntries++;
+
 			// Free list is empty -> allocate new item
 			if (freeList == NilValue) {
 				storage.emplace_back(NilValue, std::move(value));
@@ -44,10 +46,20 @@ namespace WASM {
 			return entry;
 		}
 		
-		std::optional<sizeType> remove(sizeType entryIdx) {
+		std::optional<sizeType> remove(sizeType entryIdx, std::optional<sizeType> previousEntryIdx = {}) {
+			numStoredEntries--;
+
 			// Destruct item contents
 			auto& entry = storage[entryIdx];
 			entry.data.reset();
+
+			// Relink the previous item if one was provided
+			if (previousEntryIdx.has_value()) {
+				auto& prevEntry = storage[*previousEntryIdx];
+				assert(prevEntry.next == entryIdx);
+
+				prevEntry.next = entry.next;
+			}
 
 			// Get following item if one exists
 			std::optional<sizeType> nextEntry;
@@ -73,22 +85,29 @@ namespace WASM {
 		}
 
 		sizeType storedEntries() const {
-			// All items are either used in a linked list or are
-			// in the free list -> count the free list and subtract
-			// it from the total item count
-			sizeType numFreedEntries = 0;
-			sizeType ptr = freeList;
-			while (ptr != NilValue) {
-				numFreedEntries++;
-				ptr = storage[ptr].next;
-			}
+			return numStoredEntries;
+		}
 
-			return storage.size() - numFreedEntries;
+		bool isEmpty() const {
+			return !numStoredEntries;
 		}
 
 		void clear() {
 			storage.clear();
 			freeList = NilValue;
+			numStoredEntries = 0;
+		}
+
+		std::optional<sizeType> nextOf(sizeType entry) {
+			if (storage[entry].next == NilValue) {
+				return {};
+			}
+
+			return storage[entry].next;
+		}
+
+		void reserve(sizeType slots) {
+			storage.reserve(slots);
 		}
 
 	private:
@@ -101,5 +120,6 @@ namespace WASM {
 
 		std::vector<Entry> storage;
 		sizeType freeList{ NilValue };
+		sizeType numStoredEntries{ 0 };
 	};
 }

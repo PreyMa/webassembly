@@ -35,3 +35,16 @@ void CompileError::print(std::ostream& o) const
 
 	o << ": " << message;
 }
+
+void WASM::LinkError::print(std::ostream& o) const
+{
+	o << "Link error in '";
+	if (moduleName.size() <= 20) {
+		o << moduleName << "'";
+	}
+	else {
+		o << "..." << moduleName.substr(moduleName.size() - 17) << "'";
+	}
+
+	o << " while linking to '" << importItemName << "': " << message;
+}

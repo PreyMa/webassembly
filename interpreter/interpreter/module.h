@@ -22,9 +22,11 @@ namespace WASM {
 		virtual Nullable<const BytecodeFunction> asBytecodeFunction() const { return {}; }
 		virtual Nullable<const HostFunctionBase> asHostFunction() const { return {}; }
 		virtual const FunctionType& functionType() const = 0;
+		u32 deduplicatedTypeIndex() const { return mDeduplicatedTypeIndex; }
 
 	protected:
 		u32 mIndex;
+		u32 mDeduplicatedTypeIndex{ 0 };
 	};
 
 	class BytecodeFunction final : public Function {
@@ -42,7 +44,6 @@ namespace WASM {
 		virtual Nullable<const BytecodeFunction> asBytecodeFunction() const { return *this; }
 
 		u32 moduleBaseTypeIndex() const { return mModuleBasedTypeIndex; }
-		u32 deduplicatedTypeIndex() const { return mDeduplicatedTypeIndex; }
 		const Expression& expression() const { return code; }
 
 		void setLinkedFunctionType(u32 idx, FunctionType& ft) { mDeduplicatedTypeIndex= idx;  type = ft; }
@@ -64,7 +65,6 @@ namespace WASM {
 		void uncompressLocalTypes(const std::vector<CompressedLocalTypes>&);
 
 		u32 mModuleBasedTypeIndex;
-		u32 mDeduplicatedTypeIndex{ 0 };
 		NonNull<FunctionType> type;
 		Expression code;
 		std::vector<LocalOffset> uncompressedLocals;
@@ -250,11 +250,15 @@ namespace WASM {
 
 	class ModuleLinker {
 	public:
+		ModuleLinker(Interpreter& inter) : interpreter{ inter } {}
 
 		void link();
 
 	private:
 		void buildDeduplicatedFunctionTypeTable();
+		void linkDependcies();
+
+		void throwLinkError(const Module&, const Imported&, const char*) const;
 
 		Interpreter& interpreter;
 	};

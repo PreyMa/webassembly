@@ -1306,13 +1306,15 @@ const FunctionType& ModuleValidator::functionTypeByIndex(u32 funcIdx)
 	if (funcIdx < s().importedFunctions.size()) {
 		typeIdx= s().importedFunctions[funcIdx].moduleBasedFunctionTypeIndex;
 	}
+	else {
+		funcIdx -= s().importedFunctions.size();
+		if (funcIdx > s().functions.size()) {
+			throwValidationError("Invalid function index");
+		}
 
-	funcIdx -= s().importedFunctions.size();
-	if (funcIdx > s().functions.size()) {
-		throwValidationError("Invalid function index");
+		typeIdx = s().functions[funcIdx];
 	}
 	
-	typeIdx= s().functions[funcIdx];
 	if (typeIdx > s().functionTypes.size()) {
 		throwValidationError("Function references invalid type index");
 	}

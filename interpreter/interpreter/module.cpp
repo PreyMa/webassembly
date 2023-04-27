@@ -463,6 +463,8 @@ void ModuleLinker::link()
 
 	buildDeduplicatedFunctionTypeTable();
 
+	linkDependcies();
+
 	// TODO: Linking
 	// for (auto& func : module.compilationData->importedFunctions) {
 		// func.
@@ -483,6 +485,7 @@ void ModuleLinker::link()
 	abortFunction.print(std::cout);
 	std::cout << std::endl;
 
+	modules[0].compilationData->importedFunctions[0].resolvedFunction = abortFunction;*/
 
 	assert(interpreter.modules.size() == 1);
 	assert(interpreter.modules.front().compilationData);
@@ -494,6 +497,17 @@ void ModuleLinker::link()
 
 	assert(!interpreter.modules.front().compilationData->importedMemory.has_value());
 	interpreter.modules.front().linkedMemory = *interpreter.modules.front().ownedMemoryInstance;
+}
+
+void WASM::ModuleLinker::throwLinkError(const Module& module, const Imported& item, const char* message) const
+{
+	std::string itemName;
+	itemName.reserve(item.module.size() + item.name.size() + 2);
+	itemName += item.module;
+	itemName += "::";
+	itemName += item.name;
+
+	throw LinkError{ module.name(), std::move(itemName), std::string{message}};
 }
 
 void ModuleLinker::buildDeduplicatedFunctionTypeTable()
@@ -540,6 +554,100 @@ void ModuleLinker::buildDeduplicatedFunctionTypeTable()
 	interpreter.functionTypes = std::move(dedupedFunctionTypes);
 }
 
+void WASM::ModuleLinker::linkDependcies()
+{
+	struct DependencyItem {
+		NonNull<FunctionImport> import;
+		NonNull<Module> importingModule;
+		NonNull<Module> exportingModule;
+		ExportItem exportedItem{ ExportType::FunctionIndex };
+	};
+
+	ArrayList<DependencyItem> unresolvedImports;
+
+	sizeType numSlots = 0;
+	for (auto& module : interpreter.modules) {
+		numSlots += module.compilationData->importedFunctions.size();
+	}
+	unresolvedImports.reserve(numSlots);
+
+	std::optional<sizeType> listBegin;
+	for (auto& module : interpreter.modules) {
+		for (auto& functionImport : module.compilationData->importedFunctions) {
+
+			auto moduleFnd = interpreter.moduleNameMap.find(functionImport.module);
+			if (moduleFnd == interpreter.moduleNameMap.end()) {
+				throwLinkError(module, functionImport, "Importing from unknown module");
+			}
+
+			auto& exportModule = *moduleFnd->second;
+			auto exportItem = exportModule.exportByName(functionImport.name, ExportType::FunctionIndex);
+			if (!exportItem.has_value()) {
+				throwLinkError(module, functionImport, "Importing unkown item from module");
+			}
+
+			DependencyItem item{ functionImport, module, exportModule, *exportItem };
+
+			std::cout << "Created dependency item for module '" << module.name() << "': ";
+			std::cout << functionImport.module << "::" << functionImport.name;
+			std::cout << " (type: " << exportItem->mExportType.name() << " idx: " << exportItem->mIndex << ")" << std::endl;
+
+			if (!listBegin) {
+				listBegin = unresolvedImports.add(std::move(item));
+			}
+			else {
+				listBegin = unresolvedImports.add(*listBegin, std::move(item));
+			}
+		}
+	}
+
+	// As a worst case only a single item can be linked each iteration, any more
+	// iterations would be the result of circular dependencies
+	auto maxIterations = unresolvedImports.storedEntries();
+	while (!unresolvedImports.isEmpty() && maxIterations-- > 0) {
+
+		std::cout << "### Loop start ###" << std::endl;
+
+		std::optional<sizeType> listIterator= listBegin, prevIterator;
+		while (listIterator) {
+			auto& item = unresolvedImports[*listIterator];
+
+			assert(!item.import->resolvedFunction.has_value());
+			
+			auto function= item.exportingModule->functionByIndex(item.exportedItem.mIndex);
+			if (!function.has_value()) {
+				prevIterator = *listIterator;
+				listIterator = unresolvedImports.nextOf(*listIterator);
+
+				std::cout << "- " << item.importingModule->name() << " " << item.import->module << "::" << item.import->name << " not yet resolvable" << std::endl;
+				continue;
+			}
+
+			if (item.import->deduplicatedFunctionTypeIndex != function->deduplicatedTypeIndex()) {
+				throwLinkError(*item.importingModule, *item.import, "The types of the import and export are incompatible");
+			}
+
+			item.import->resolvedFunction = *function;
+			std::cout << "- Resolved " << item.importingModule->name() << " " << item.import->module << "::" << item.import->name << std::endl;
+
+			auto nextIteratorPos = unresolvedImports.remove(*listIterator, prevIterator);
+			prevIterator = listIterator;
+
+			if (listIterator == listBegin) {
+				listBegin = nextIteratorPos;
+			}
+
+			listIterator = nextIteratorPos;
+		}
+	}
+
+	// If there is anything left there is at least one circular dependency
+	if (!unresolvedImports.isEmpty()) {
+		assert(listBegin.has_value());
+		auto& item = unresolvedImports[*listBegin];
+		throwLinkError(*item.importingModule, *item.import, "Found circular dependency involving this dependency item");
+	}
+}
 
 
 std::optional<sizeType> ModuleCompiler::LabelTypes::size(const Module& module) const

@@ -43,6 +43,18 @@ namespace WASM {
 		std::string fileName;
 	};
 
+	class LinkError : public Error {
+	public:
+		LinkError(std::string mod, std::string in, std::string m)
+			: Error{ std::move(m) }, moduleName{ std::move(mod) }, importItemName{ std::move(in) } {}
+
+		virtual void print(std::ostream& o) const override;
+
+	private:
+		std::string moduleName;
+		std::string importItemName;
+	};
+
 	class CompileError : public Error {
 	public:
 		CompileError(std::string mod, std::string m)

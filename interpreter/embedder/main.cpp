@@ -14,7 +14,9 @@ int main() {
 		auto logger = std::make_unique<WASM::ConsoleLogger>( std::cout );
 		interpreter.attachIntrospector(std::move(logger));
 
-		interpreter.loadModule("C:/Users/Matthias/Documents/Uni/ABM/webassembly/webassembly/assemblyscript/helloworld/build/debug.wasm");
+		//interpreter.loadModule("C:/Users/Matthias/Documents/Uni/ABM/webassembly/webassembly/assemblyscript/helloworld/build/debug.wasm");
+		interpreter.loadModule("C:/Users/Matthias/Documents/Uni/ABM/webassembly/webassembly/assemblyscript/ying/build/ying.debug.wasm");
+		interpreter.loadModule("C:/Users/Matthias/Documents/Uni/ABM/webassembly/webassembly/assemblyscript/yang/build/yang.debug.wasm");
 		interpreter.compileAndLinkModules();
 
 		interpreter.runStartFunctions();
