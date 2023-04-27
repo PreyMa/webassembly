@@ -4,8 +4,19 @@
 
 using namespace WASM;
 
-void DebugLogger::onModuleParsingStart()
+void DebugLogger::onModuleParsingStart(std::string_view modulePath)
 {
+	auto& stream= outStream();
+	stream << "Parsing module: '";
+	
+	if (modulePath.size() > 40) {
+		stream << "..." << modulePath.substr(modulePath.size()- 40, 40);
+	}
+	else {
+		stream << modulePath;
+	}
+
+	stream << "'" << std::endl;
 }
 
 void DebugLogger::onModuleParsingFinished(std::span<FunctionCode> functionCodes)

@@ -14,7 +14,7 @@ namespace WASM {
 		using NameMap = std::unordered_map<u32, std::string>;
 		using IndirectNameMap = std::unordered_map<u32, NameMap>;
 
-		virtual void onModuleParsingStart() = 0;
+		virtual void onModuleParsingStart(std::string_view) = 0;
 		virtual void onModuleParsingFinished(std::span<FunctionCode>) = 0;
 		virtual void onSkippingUnrecognizedSection(SectionType, sizeType)= 0;
 		virtual void onParsingCustomSection(std::string_view, const BufferSlice&)= 0;
@@ -48,7 +48,7 @@ namespace WASM {
 
 	class DebugLogger : public Introspector {
 	public:
-		virtual void onModuleParsingStart() override;
+		virtual void onModuleParsingStart(std::string_view) override;
 		virtual void onModuleParsingFinished(std::span<FunctionCode>) override;
 		virtual void onSkippingUnrecognizedSection(SectionType, sizeType) override;
 		virtual void onParsingCustomSection(std::string_view, const BufferSlice&) override;

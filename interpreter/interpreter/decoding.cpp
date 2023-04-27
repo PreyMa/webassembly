@@ -13,7 +13,7 @@ void ModuleParser::parse(Buffer buffer, std::string modulePath)
 	clear();
 	
 	if (introspector.has_value()) {
-		introspector->onModuleParsingStart();
+		introspector->onModuleParsingStart(modulePath);
 	}
 
 	path = std::move(modulePath);
