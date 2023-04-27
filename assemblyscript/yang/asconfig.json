@@ -1,0 +1,22 @@
+{
+  "targets": {
+    "debug": {
+      "outFile": "build/yang.debug.wasm",
+      "textFile": "build/yang.debug.wat",
+      "sourceMap": true,
+      "debug": true
+    },
+    "release": {
+      "outFile": "build/yang.release.wasm",
+      "textFile": "build/yang.release.wat",
+      "sourceMap": true,
+      "optimizeLevel": 3,
+      "shrinkLevel": 0,
+      "converge": false,
+      "noAssert": false
+    }
+  },
+  "options": {
+    "bindings": "esm"
+  }
+}

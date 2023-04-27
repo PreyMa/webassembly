@@ -1,0 +1,22 @@
+{
+  "targets": {
+    "debug": {
+      "outFile": "build/ying.debug.wasm",
+      "textFile": "build/ying.debug.wat",
+      "sourceMap": true,
+      "debug": true
+    },
+    "release": {
+      "outFile": "build/ying.release.wasm",
+      "textFile": "build/ying.release.wat",
+      "sourceMap": true,
+      "optimizeLevel": 3,
+      "shrinkLevel": 0,
+      "converge": false,
+      "noAssert": false
+    }
+  },
+  "options": {
+    "bindings": "esm"
+  }
+}
