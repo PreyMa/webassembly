@@ -103,7 +103,17 @@ Module ModuleParser::toModule()
 
 	// FIXME: Just use the path as name for now
 	if (mName.empty()) {
-		mName = path;
+		auto begin= path.find_last_of("/\\");
+		if (begin == std::string::npos) {
+			begin = 0;
+		}
+
+		auto end = path.find_first_of('.', begin);
+		if (end == std::string::npos) {
+			end = path.size();
+		}
+
+		mName = path.substr(begin+1, end- begin -1);
 	}
 
 	return Module{
