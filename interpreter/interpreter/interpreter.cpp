@@ -54,7 +54,7 @@ void Interpreter::compileAndLinkModules()
 	}
 
 	{
-		ModuleLinker linker{ *this, modules };
+		ModuleLinker linker{ *this };
 		linker.link();
 	}
 

@@ -453,7 +453,7 @@ Nullable<const std::string> Module::functionNameByIndex(u32 functionIdx) const
 
 void ModuleLinker::link()
 {
-	if (modules.empty()) {
+	if (interpreter.modules.empty()) {
 		throw std::runtime_error{ "Nothing to link" };
 	}
 
@@ -473,9 +473,9 @@ void ModuleLinker::link()
 	// TODO: Init globals here
 
 	// FIXME: This is some hard coded linking just for testing
-	assert(modules.size() == 1);
-	assert(modules[0].compilationData);
-	assert(modules[0].compilationData->importedFunctions.size() == 1);
+	assert(interpreter.modules.size() == 1);
+	assert(interpreter.modules.front().compilationData);
+	/*assert(modules[0].compilationData->importedFunctions.size() == 1);
 
 	static HostFunction abortFunction = [&](u32, u32, u32, u32) { std::cout << "Abort called"; };
 	abortFunction.setIndex(0);
@@ -483,24 +483,24 @@ void ModuleLinker::link()
 	abortFunction.print(std::cout);
 	std::cout << std::endl;
 
-	modules[0].compilationData->importedFunctions[0].resolvedFunction = abortFunction;
 
-	assert(modules.size() == 1);
-	assert(modules[0].compilationData);
-	if (modules[0].compilationData->startFunctionIndex.has_value()) {
-		assert(modules[0].compilationData->startFunctionIndex >= modules[0].numImportedFunctions);
-		assert(*modules[0].compilationData->startFunctionIndex- modules[0].numImportedFunctions < modules[0].functions.size());
-		modules[0].mStartFunction = modules[0].functions[*modules[0].compilationData->startFunctionIndex- modules[0].numImportedFunctions];
+	assert(interpreter.modules.size() == 1);
+	assert(interpreter.modules.front().compilationData);
+	if (interpreter.modules.front().compilationData->startFunctionIndex.has_value()) {
+		assert(interpreter.modules.front().compilationData->startFunctionIndex >= interpreter.modules.front().numImportedFunctions);
+		assert(*interpreter.modules.front().compilationData->startFunctionIndex- interpreter.modules.front().numImportedFunctions < interpreter.modules.front().functions.size());
+		interpreter.modules.front().mStartFunction = interpreter.modules.front().functions[*interpreter.modules.front().compilationData->startFunctionIndex- interpreter.modules.front().numImportedFunctions];
 	}
 
-	assert(!modules[0].compilationData->importedMemory.has_value());
-	modules[0].linkedMemory = *modules[0].ownedMemoryInstance;
+	assert(!interpreter.modules.front().compilationData->importedMemory.has_value());
+	interpreter.modules.front().linkedMemory = *interpreter.modules.front().ownedMemoryInstance;
 }
 
 void ModuleLinker::buildDeduplicatedFunctionTypeTable()
 {
+	auto& modules = interpreter.modules;
 	std::vector<FunctionType> dedupedFunctionTypes;
-	dedupedFunctionTypes.reserve(modules[0].compilationData->functionTypes.size());
+	dedupedFunctionTypes.reserve(modules.front().compilationData->functionTypes.size());
 
 	for (auto& module : modules) {
 		auto& types = module.compilationData->functionTypes;

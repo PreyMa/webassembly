@@ -91,8 +91,8 @@ namespace WASM {
 		void dumpStack(std::ostream&) const;
 		std::optional<FunctionLookup> findFunctionByBytecodePointer(const u8*) const;
 
-		std::vector<Module> modules;
-		std::unordered_map<std::string, Nullable<Module>> moduleNameMap;
+		std::list<Module> modules;
+		std::unordered_map<std::string, NonNull<Module>> moduleNameMap;
 		SealedVector<FunctionType> functionTypes;
 
 		bool hasLinked{ false };

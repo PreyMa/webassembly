@@ -250,7 +250,6 @@ namespace WASM {
 
 	class ModuleLinker {
 	public:
-		ModuleLinker(Interpreter& inter, std::span<Module> ms) : interpreter{ inter }, modules { ms } {}
 
 		void link();
 
@@ -258,7 +257,6 @@ namespace WASM {
 		void buildDeduplicatedFunctionTypeTable();
 
 		Interpreter& interpreter;
-		std::span<Module> modules;
 	};
 
 	class ModuleCompiler {
