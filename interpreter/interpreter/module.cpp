@@ -484,6 +484,7 @@ void ModuleLinker::link()
 
 	initGlobals();
 	linkMemoryInstances();
+	linkStartFunctions();
 
 	// FIXME: This is some hard coded linking just for testing
 	assert(interpreter.modules.size() == 1);
@@ -563,6 +564,21 @@ void WASM::ModuleLinker::linkMemoryInstances()
 		auto mem= module.memoryByIndex(0);
 		if (mem.has_value()) {
 			module.linkedMemory = mem;
+		}
+	}
+}
+
+void WASM::ModuleLinker::linkStartFunctions()
+{
+	for (auto& module : interpreter.modules) {
+		auto idx= module.compilationData->startFunctionIndex;
+		if (idx.has_value()) {
+			auto function= module.mStartFunction = module.functionByIndex(*idx);
+			if (!function.has_value()) {
+				throwLinkError(module, "<start-function>", "Could not find module start function");
+			}
+
+			module.mStartFunction = function;
 		}
 	}
 }

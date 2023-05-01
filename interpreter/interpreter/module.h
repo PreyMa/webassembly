@@ -198,7 +198,7 @@ namespace WASM {
 		std::optional<ResolvedGlobal> globalByIndex(u32);
 		Nullable<Memory> memoryByIndex(u32);
 		Nullable<FunctionTable> tableByIndex(u32);
-		Nullable<BytecodeFunction> startFunction() const { return mStartFunction; }
+		Nullable<Function> startFunction() const { return mStartFunction; }
 		Nullable<Memory> memoryWithIndexZero() const { return linkedMemory; }
 
 		Nullable<const Function> findFunctionByBytecodePointer(const u8*) const;
@@ -236,7 +236,7 @@ namespace WASM {
 		u32 numRemainingElements{ 0 };
 
 		// Linked references
-		Nullable<BytecodeFunction> mStartFunction;
+		Nullable<Function> mStartFunction;
 		Nullable<Memory> linkedMemory;
 
 		std::unique_ptr<CompilationData> compilationData;
@@ -273,6 +273,7 @@ namespace WASM {
 		void addDepenencyItem(DependencyItem);
 		void initGlobals();
 		void linkMemoryInstances();
+		void linkStartFunctions();
 
 		void throwLinkError(const Module&, const Imported&, const char*) const;
 		void throwLinkError(const Module&, const char*, const char*) const;
