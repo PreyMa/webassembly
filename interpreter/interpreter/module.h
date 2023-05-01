@@ -272,8 +272,10 @@ namespace WASM {
 		void linkDependencies();
 		void addDepenencyItem(DependencyItem);
 		void initGlobals();
+		void linkMemoryInstances();
 
 		void throwLinkError(const Module&, const Imported&, const char*) const;
+		void throwLinkError(const Module&, const char*, const char*) const;
 
 		ArrayList<DependencyItem> unresolvedImports;
 		std::optional<sizeType> listBegin;

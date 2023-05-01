@@ -483,6 +483,7 @@ void ModuleLinker::link()
 	linkDependencies();
 
 	initGlobals();
+	linkMemoryInstances();
 
 	// FIXME: This is some hard coded linking just for testing
 	assert(interpreter.modules.size() == 1);
@@ -516,7 +517,7 @@ void ModuleLinker::link()
 void ModuleLinker::checkModulesLinkStatus() {
 	for (auto& module : interpreter.modules) {
 		if( !module.needsLinking() ) {
-			throw LinkError{ module.name(), "<none>", "Module already linked"};
+			throwLinkError(module, "<none>", "Module already linked");
 		}
 	}
 }
@@ -524,6 +525,11 @@ void ModuleLinker::checkModulesLinkStatus() {
 void ModuleLinker::throwLinkError(const Module& module, const Imported& item, const char* message) const
 {
 	throw LinkError{ module.name(), item.scopedName(), std::string{message}};
+}
+
+void ModuleLinker::throwLinkError(const Module& module, const char* itemName, const char* message) const
+{
+	throw LinkError{ module.name(), itemName, std::string{message} };
 }
 
 void WASM::ModuleLinker::initGlobals()
@@ -544,6 +550,19 @@ void WASM::ModuleLinker::initGlobals()
 			else {
 				module.globals64[*idx].set(initValue);
 			}
+		}
+	}
+}
+
+void WASM::ModuleLinker::linkMemoryInstances()
+{
+	// Set the modules memory instance after resolving imports, as the module might
+	// import its memory instance from another module.
+
+	for (auto& module : interpreter.modules) {
+		auto mem= module.memoryByIndex(0);
+		if (mem.has_value()) {
+			module.linkedMemory = mem;
 		}
 	}
 }
