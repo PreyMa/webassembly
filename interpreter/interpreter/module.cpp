@@ -482,14 +482,7 @@ void ModuleLinker::link()
 
 	linkDependencies();
 
-	// TODO: Linking
-	// for (auto& func : module.compilationData->importedFunctions) {
-		// func.
-	// }
-
-	// TODO: Do linking here
-
-	// TODO: Init globals here
+	initGlobals();
 
 	// FIXME: This is some hard coded linking just for testing
 	assert(interpreter.modules.size() == 1);
@@ -531,6 +524,28 @@ void ModuleLinker::checkModulesLinkStatus() {
 void ModuleLinker::throwLinkError(const Module& module, const Imported& item, const char* message) const
 {
 	throw LinkError{ module.name(), item.scopedName(), std::string{message}};
+}
+
+void WASM::ModuleLinker::initGlobals()
+{
+	// Globals might reference imports from other modules, so they can only be
+	// initialized with values after all imorts have been resolved.
+
+	for (auto& module : interpreter.modules) {
+		for (auto& declaredGlobal : module.compilationData->globalTypes) {
+			auto initValue= declaredGlobal.initExpression().constantUntypedValue(module);
+
+			auto idx = declaredGlobal.indexInTypedStorageArray();
+			assert(idx.has_value());
+
+			if (declaredGlobal.valType().sizeInBytes() == 4) {
+				module.globals32[*idx].set((u32) initValue);
+			}
+			else {
+				module.globals64[*idx].set(initValue);
+			}
+		}
+	}
 }
 
 void ModuleLinker::buildDeduplicatedFunctionTypeTable()

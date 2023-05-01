@@ -271,6 +271,7 @@ namespace WASM {
 		void createDependencyItems(const Module&, VirtualSpan<Imported>);
 		void linkDependencies();
 		void addDepenencyItem(DependencyItem);
+		void initGlobals();
 
 		void throwLinkError(const Module&, const Imported&, const char*) const;
 
