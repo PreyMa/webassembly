@@ -43,6 +43,11 @@ namespace WASM {
 		virtual void onValidatingGlobal(const DeclaredGlobal&) = 0;
 		virtual void onValidatingElement(const Element&) = 0;
 
+		virtual void onModuleLinkingStart() = 0;
+		virtual void onModuleLinkingFinished() = 0;
+		virtual void onAddingLinkingDependency(const Module& importingModule, const Imported& import, u32 idx) = 0;
+		virtual void onLinkingDependencyResolved(const Module& importingModule, const Imported& import) = 0;
+
 		virtual void onModuleTableInitialized(const Module&, sizeType, sizeType) = 0;
 	};
 
@@ -77,12 +82,18 @@ namespace WASM {
 		virtual void onValidatingGlobal(const DeclaredGlobal&) override;
 		virtual void onValidatingElement(const Element&) override;
 
+		virtual void onModuleLinkingStart() override;
+		virtual void onModuleLinkingFinished() override;
+		virtual void onAddingLinkingDependency(const Module& importingModule, const Imported& import, u32 idx) override;
+		virtual void onLinkingDependencyResolved(const Module& importingModule, const Imported& import) override;
+
 		virtual void onModuleTableInitialized(const Module&, sizeType, sizeType) override;
 
 	protected:
 		virtual std::ostream& outStream() = 0;
 		virtual bool doLoggingWhenParsing() = 0;
 		virtual bool doLoggingWhenValidating() = 0;
+		virtual bool doLoggingWhenLinking() = 0;
 
 	private:
 		bool isValidatingImports{ false };
@@ -90,16 +101,18 @@ namespace WASM {
 
 	class ConsoleLogger : public DebugLogger {
 	public:
-		ConsoleLogger(std::ostream& s, bool lp= true, bool lv= true)
-			: stream{ s }, logWhenParsing{ lp }, logWhenValidating{ lv } {}
+		ConsoleLogger(std::ostream& s, bool lp= true, bool lv= true, bool ll= true)
+			: stream{ s }, logWhenParsing{ lp }, logWhenValidating{ lv }, logWhenLinking{ ll } {}
 
 	protected:
 		virtual std::ostream& outStream() override;
 		virtual bool doLoggingWhenParsing() override;
 		virtual bool doLoggingWhenValidating() override;
+		virtual bool doLoggingWhenLinking() override;
 
 		bool logWhenParsing;
 		bool logWhenValidating;
+		bool logWhenLinking;
 		std::ostream& stream;
 	};
 }

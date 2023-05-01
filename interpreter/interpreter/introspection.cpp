@@ -340,6 +340,32 @@ void DebugLogger::onValidatingElement(const Element& element)
 	}
 }
 
+void WASM::DebugLogger::onModuleLinkingStart()
+{
+}
+
+void WASM::DebugLogger::onModuleLinkingFinished()
+{
+}
+
+void WASM::DebugLogger::onAddingLinkingDependency(const Module& importingModule, const Imported& import, u32 idx)
+{
+	if (doLoggingWhenLinking()) {
+		auto& stream = outStream();
+		stream << "Created dependency item for module '" << importingModule.name() << "': ";
+		stream << import.module() << "::" << import.name();
+		stream << " (type: " << import.requiredExportType().name() << " idx: " << idx << ")" << std::endl;
+	}
+}
+
+void WASM::DebugLogger::onLinkingDependencyResolved(const Module& importingModule, const Imported& import)
+{
+	if (doLoggingWhenLinking()) {
+		auto& stream = outStream();
+		stream << "- Resolved dependency from module '" << importingModule.name() << "': " << import.module() << "::" << import.name() << std::endl;
+	}
+}
+
 void WASM::DebugLogger::onModuleTableInitialized(const Module& module, sizeType numElements, sizeType numFunctions)
 {
 	outStream() << "Initalized tables in module '" << module.name() << "'. " << numFunctions <<
@@ -359,4 +385,9 @@ bool WASM::ConsoleLogger::doLoggingWhenParsing()
 bool WASM::ConsoleLogger::doLoggingWhenValidating()
 {
 	return logWhenValidating;
+}
+
+bool WASM::ConsoleLogger::doLoggingWhenLinking()
+{
+	return logWhenLinking;
 }

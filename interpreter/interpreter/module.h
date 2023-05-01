@@ -252,7 +252,8 @@ namespace WASM {
 
 	class ModuleLinker {
 	public:
-		ModuleLinker(Interpreter& inter) : interpreter{ inter } {}
+		ModuleLinker(Interpreter& inter, Nullable<Introspector> intro)
+			: interpreter{ inter }, introspector{ intro } {}
 
 		void link();
 
@@ -264,6 +265,7 @@ namespace WASM {
 			ExportItem exportedItem{ ExportType::FunctionIndex };
 		};
 
+		void checkModulesLinkStatus();
 		void buildDeduplicatedFunctionTypeTable();
 		sizeType countDependencyItems();
 		void createDependencyItems(const Module&, VirtualSpan<Imported>);
@@ -276,6 +278,7 @@ namespace WASM {
 		std::optional<sizeType> listBegin;
 
 		Interpreter& interpreter;
+		Nullable<Introspector> introspector;
 	};
 
 	class ModuleCompiler {

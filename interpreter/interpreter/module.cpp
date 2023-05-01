@@ -458,9 +458,11 @@ void ModuleLinker::link()
 		throw std::runtime_error{ "Nothing to link" };
 	}
 
-	//if (!module.needsLinking()) {
-//		throwCompilationError("Module already linked");
-//	}
+	if (introspector.has_value()) {
+		introspector->onModuleLinkingStart();
+	}
+
+	checkModulesLinkStatus();
 
 	buildDeduplicatedFunctionTypeTable();
 
@@ -512,6 +514,18 @@ void ModuleLinker::link()
 
 	assert(!interpreter.modules.front().compilationData->importedMemory.has_value());
 	interpreter.modules.front().linkedMemory = *interpreter.modules.front().ownedMemoryInstance;
+
+	if (introspector.has_value()) {
+		introspector->onModuleLinkingFinished();
+	}
+}
+
+void ModuleLinker::checkModulesLinkStatus() {
+	for (auto& module : interpreter.modules) {
+		if( !module.needsLinking() ) {
+			throw LinkError{ module.name(), "<none>", "Module already linked"};
+		}
+	}
 }
 
 void ModuleLinker::throwLinkError(const Module& module, const Imported& item, const char* message) const
@@ -601,8 +615,6 @@ void ModuleLinker::linkDependencies()
 	auto maxIterations = unresolvedImports.storedEntries();
 	while (!unresolvedImports.isEmpty() && maxIterations-- > 0) {
 
-		std::cout << "### Loop start ###" << std::endl;
-
 		std::optional<sizeType> listIterator= listBegin, prevIterator;
 		while (listIterator) {
 			auto& item = unresolvedImports[*listIterator];
@@ -613,7 +625,7 @@ void ModuleLinker::linkDependencies()
 				prevIterator = *listIterator;
 				listIterator = unresolvedImports.nextOf(*listIterator);
 
-				std::cout << "- " << item.importingModule->name() << " " << item.import->module() << "::" << item.import->name() << " not yet resolvable" << std::endl;
+				// std::cout << "- " << item.importingModule->name() << " " << item.import->module() << "::" << item.import->name() << " not yet resolvable" << std::endl;
 				continue;
 			}
 
@@ -621,7 +633,9 @@ void ModuleLinker::linkDependencies()
 				throwLinkError(*item.importingModule, *item.import, "The types of the import and export are incompatible");
 			}
 
-			std::cout << "- Resolved " << item.importingModule->name() << " " << item.import->module() << "::" << item.import->name() << std::endl;
+			if (introspector.has_value()) {
+				introspector->onLinkingDependencyResolved(*item.importingModule, *item.import);
+			}
 
 			auto nextIteratorPos = unresolvedImports.remove(*listIterator, prevIterator);
 			if (listIterator == listBegin) {
@@ -642,9 +656,9 @@ void ModuleLinker::linkDependencies()
 
 void ModuleLinker::addDepenencyItem(DependencyItem item)
 {
-	std::cout << "Created dependency item for module '" << item.importingModule->name() << "': ";
-	std::cout << item.import->module() << "::" << item.import->name();
-	std::cout << " (type: " << item.exportedItem.mExportType.name() << " idx: " << item.exportedItem.mIndex << ")" << std::endl;
+	if (introspector.has_value()) {
+		introspector->onAddingLinkingDependency(*item.importingModule, *item.import, item.exportedItem.mIndex);
+	}
 
 	if (!listBegin) {
 		listBegin = unresolvedImports.add(std::move(item));
