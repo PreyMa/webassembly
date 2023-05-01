@@ -54,7 +54,8 @@ void Interpreter::compileAndLinkModules()
 	}
 
 	{
-		ModuleLinker linker{ *this };
+		auto introspector = Nullable<Introspector>::fromPointer(attachedIntrospector);
+		ModuleLinker linker{ *this, introspector };
 		linker.link();
 	}
 
