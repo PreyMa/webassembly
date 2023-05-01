@@ -6,6 +6,7 @@
 #include "interpreter.h"
 #include "introspection.h"
 #include "error.h"
+#include "virtual_span.h"
 
 using namespace WASM;
 
@@ -117,9 +118,9 @@ void BytecodeFunction::uncompressLocalTypes(const std::vector<CompressedLocalTyp
 }
 
 FunctionTable::FunctionTable(u32 idx, const TableType& tableType)
-	: index{ idx }, mType{ tableType.valType() }, limits{ tableType.limits() }
+	: index{ idx }, mType{ tableType.valType() }, mLimits{ tableType.limits() }
 {
-	if (grow(limits.min(), {}) != 0) {
+	if (grow(mLimits.min(), {}) != 0) {
 		throw std::runtime_error{ "Could not init table" };
 	}
 }
@@ -127,7 +128,7 @@ FunctionTable::FunctionTable(u32 idx, const TableType& tableType)
 i32 FunctionTable::grow(i32 increase, Nullable<Function> item)
 {
 	auto oldSize = table.size();
-	if (limits.max().has_value() && oldSize + increase > *limits.max()) {
+	if (mLimits.max().has_value() && oldSize + increase > *mLimits.max()) {
 		return -1;
 	}
 
@@ -172,23 +173,23 @@ sizeType LinkedElement::initTableIfActive(std::span<FunctionTable> tables)
 }
 
 Memory::Memory(u32 idx, Limits l)
-	: index{ idx }, limits{ l } {
-	grow(limits.min());
+	: mIndex{ idx }, mLimits{ l } {
+	grow(mLimits.min());
 }
 
 i32 Memory::grow(i32 pageCountIncrease)
 {
-	auto oldByteSize = data.size();
+	auto oldByteSize = mData.size();
 	auto oldPageCount = oldByteSize / PageSize;
 
-	if (limits.max().has_value() && oldPageCount + pageCountIncrease > *limits.max()) {
+	if (mLimits.max().has_value() && oldPageCount + pageCountIncrease > *mLimits.max()) {
 		return -1;
 	}
 
 	try {
 		auto byteSizeIncrease = pageCountIncrease * PageSize;
-		data.reserve(oldByteSize + byteSizeIncrease);
-		data.insert(data.end(), byteSizeIncrease, 0x00);
+		mData.reserve(oldByteSize + byteSizeIncrease);
+		mData.insert(mData.end(), byteSizeIncrease, 0x00);
 		return oldPageCount;
 	}
 	catch (std::bad_alloc& e) {
@@ -197,11 +198,11 @@ i32 Memory::grow(i32 pageCountIncrease)
 }
 
 u64 Memory::minBytes() const {
-	return limits.min() * PageSize;
+	return mLimits.min() * PageSize;
 }
 
 std::optional<u64> Memory::maxBytes() const {
-	auto m = limits.max();
+	auto m = mLimits.max();
 	if (m.has_value()) {
 		return { *m * PageSize };
 	}
@@ -211,7 +212,7 @@ std::optional<u64> Memory::maxBytes() const {
 
 sizeType Memory::currentSize() const
 {
-	return data.size() / PageSize;
+	return mData.size() / PageSize;
 }
 
 Module::Module(
@@ -324,7 +325,7 @@ Nullable<Function> Module::functionByIndex(u32 idx)
 {
 	if (idx < numImportedFunctions) {
 		if (compilationData) {
-			return compilationData->importedFunctions[idx].resolvedFunction;
+			return compilationData->importedFunctions[idx].resolvedFunction();
 		}
 
 		return {};
@@ -350,7 +351,7 @@ std::optional<Module::ResolvedGlobal> Module::globalByIndex(u32 idx)
 
 		return ResolvedGlobal{
 			*baseGlobal,
-			importedGlobal.globalType
+			importedGlobal.globalType()
 		};
 	}
 
@@ -380,7 +381,7 @@ Nullable<Memory> Module::memoryByIndex(u32 idx)
 	if (numImportedMemories) {
 		if (compilationData) {
 			assert(compilationData->importedMemory.has_value());
-			return compilationData->importedMemory->resolvedMemory;
+			return compilationData->importedMemory->resolvedMemory();
 		}
 
 		return {};
@@ -390,11 +391,11 @@ Nullable<Memory> Module::memoryByIndex(u32 idx)
 	return *ownedMemoryInstance;
 }
 
-Nullable<FunctionTable> WASM::Module::tableByIndex(u32 idx)
+Nullable<FunctionTable> Module::tableByIndex(u32 idx)
 {
 	if (idx < numImportedTables) {
 		if (compilationData) {
-			return compilationData->importedTables[idx].resolvedTable;
+			return compilationData->importedTables[idx].resolvedTable();
 		}
 
 		return {};
@@ -463,7 +464,21 @@ void ModuleLinker::link()
 
 	buildDeduplicatedFunctionTypeTable();
 
-	linkDependcies();
+	countDependencyItems();
+
+	for (auto& module : interpreter.modules) {
+		auto& compilationData = *module.compilationData;
+		createDependencyItems(module, compilationData.importedFunctions);
+		createDependencyItems(module, compilationData.importedGlobals);
+		createDependencyItems(module, compilationData.importedTables);
+
+		if (compilationData.importedMemory.has_value()) {
+			std::array<MemoryImport, 1> arr{ *compilationData.importedMemory };
+			createDependencyItems(module, arr);
+		}
+	}
+
+	linkDependencies();
 
 	// TODO: Linking
 	// for (auto& func : module.compilationData->importedFunctions) {
@@ -499,15 +514,9 @@ void ModuleLinker::link()
 	interpreter.modules.front().linkedMemory = *interpreter.modules.front().ownedMemoryInstance;
 }
 
-void WASM::ModuleLinker::throwLinkError(const Module& module, const Imported& item, const char* message) const
+void ModuleLinker::throwLinkError(const Module& module, const Imported& item, const char* message) const
 {
-	std::string itemName;
-	itemName.reserve(item.module.size() + item.name.size() + 2);
-	itemName += item.module;
-	itemName += "::";
-	itemName += item.name;
-
-	throw LinkError{ module.name(), std::move(itemName), std::string{message}};
+	throw LinkError{ module.name(), item.scopedName(), std::string{message}};
 }
 
 void ModuleLinker::buildDeduplicatedFunctionTypeTable()
@@ -544,63 +553,49 @@ void ModuleLinker::buildDeduplicatedFunctionTypeTable()
 		}
 
 		for (auto& functionImport : module.compilationData->importedFunctions) {
-			assert(functionImport.deduplicatedFunctionTypeIndex == 0);
-			auto findIt = findDedupedFunctionType(module, functionImport.moduleBasedFunctionTypeIndex);
+			assert(!functionImport.hasDeduplicatedFunctionTypeIndex());
+			auto findIt = findDedupedFunctionType(module, functionImport.moduleBasedFunctionTypeIndex());
 
-			functionImport.deduplicatedFunctionTypeIndex = findIt - dedupedFunctionTypes.begin();
+			functionImport.deduplicatedFunctionTypeIndex( findIt - dedupedFunctionTypes.begin() );
 		}
 	}
 
 	interpreter.functionTypes = std::move(dedupedFunctionTypes);
 }
 
-void WASM::ModuleLinker::linkDependcies()
+sizeType ModuleLinker::countDependencyItems()
 {
-	struct DependencyItem {
-		NonNull<FunctionImport> import;
-		NonNull<Module> importingModule;
-		NonNull<Module> exportingModule;
-		ExportItem exportedItem{ ExportType::FunctionIndex };
-	};
-
-	ArrayList<DependencyItem> unresolvedImports;
-
 	sizeType numSlots = 0;
 	for (auto& module : interpreter.modules) {
-		numSlots += module.compilationData->importedFunctions.size();
+		numSlots += module.numImportedFunctions;
+		numSlots += module.numImportedGlobals;
+		numSlots += module.numImportedMemories;
+		numSlots += module.numImportedTables;
 	}
 	unresolvedImports.reserve(numSlots);
+	return numSlots;
+}
 
-	std::optional<sizeType> listBegin;
-	for (auto& module : interpreter.modules) {
-		for (auto& functionImport : module.compilationData->importedFunctions) {
-
-			auto moduleFnd = interpreter.moduleNameMap.find(functionImport.module);
-			if (moduleFnd == interpreter.moduleNameMap.end()) {
-				throwLinkError(module, functionImport, "Importing from unknown module");
-			}
-
-			auto& exportModule = *moduleFnd->second;
-			auto exportItem = exportModule.exportByName(functionImport.name, ExportType::FunctionIndex);
-			if (!exportItem.has_value()) {
-				throwLinkError(module, functionImport, "Importing unkown item from module");
-			}
-
-			DependencyItem item{ functionImport, module, exportModule, *exportItem };
-
-			std::cout << "Created dependency item for module '" << module.name() << "': ";
-			std::cout << functionImport.module << "::" << functionImport.name;
-			std::cout << " (type: " << exportItem->mExportType.name() << " idx: " << exportItem->mIndex << ")" << std::endl;
-
-			if (!listBegin) {
-				listBegin = unresolvedImports.add(std::move(item));
-			}
-			else {
-				listBegin = unresolvedImports.add(*listBegin, std::move(item));
-			}
+void ModuleLinker::createDependencyItems(const Module& module, VirtualSpan<Imported> importSpan) {
+	for (auto& imported : importSpan) {
+		auto moduleFnd = interpreter.moduleNameMap.find(imported.module());
+		if (moduleFnd == interpreter.moduleNameMap.end()) {
+			throwLinkError(module, imported, "Importing from unknown module");
 		}
-	}
 
+		auto& exportModule = *moduleFnd->second;
+		auto exportItem = exportModule.exportByName(imported.name(), imported.requiredExportType());
+		if (!exportItem.has_value()) {
+			throwLinkError(module, imported, "Importing unkown item from module");
+		}
+
+		DependencyItem item{ imported, module, exportModule, *exportItem };
+		addDepenencyItem(item);
+	}
+}
+
+void ModuleLinker::linkDependencies()
+{
 	// As a worst case only a single item can be linked each iteration, any more
 	// iterations would be the result of circular dependencies
 	auto maxIterations = unresolvedImports.storedEntries();
@@ -611,28 +606,24 @@ void WASM::ModuleLinker::linkDependcies()
 		std::optional<sizeType> listIterator= listBegin, prevIterator;
 		while (listIterator) {
 			auto& item = unresolvedImports[*listIterator];
+			assert(!item.import->isResolved());
 
-			assert(!item.import->resolvedFunction.has_value());
-			
-			auto function= item.exportingModule->functionByIndex(item.exportedItem.mIndex);
-			if (!function.has_value()) {
+			auto didFind= item.import->tryResolveFromModuleWithIndex(*item.exportingModule, item.exportedItem.mIndex);
+			if (!didFind) {
 				prevIterator = *listIterator;
 				listIterator = unresolvedImports.nextOf(*listIterator);
 
-				std::cout << "- " << item.importingModule->name() << " " << item.import->module << "::" << item.import->name << " not yet resolvable" << std::endl;
+				std::cout << "- " << item.importingModule->name() << " " << item.import->module() << "::" << item.import->name() << " not yet resolvable" << std::endl;
 				continue;
 			}
 
-			if (item.import->deduplicatedFunctionTypeIndex != function->deduplicatedTypeIndex()) {
+			if (!item.import->isTypeCompatible()) {
 				throwLinkError(*item.importingModule, *item.import, "The types of the import and export are incompatible");
 			}
 
-			item.import->resolvedFunction = *function;
-			std::cout << "- Resolved " << item.importingModule->name() << " " << item.import->module << "::" << item.import->name << std::endl;
+			std::cout << "- Resolved " << item.importingModule->name() << " " << item.import->module() << "::" << item.import->name() << std::endl;
 
 			auto nextIteratorPos = unresolvedImports.remove(*listIterator, prevIterator);
-			prevIterator = listIterator;
-
 			if (listIterator == listBegin) {
 				listBegin = nextIteratorPos;
 			}
@@ -646,6 +637,20 @@ void WASM::ModuleLinker::linkDependcies()
 		assert(listBegin.has_value());
 		auto& item = unresolvedImports[*listBegin];
 		throwLinkError(*item.importingModule, *item.import, "Found circular dependency involving this dependency item");
+	}
+}
+
+void ModuleLinker::addDepenencyItem(DependencyItem item)
+{
+	std::cout << "Created dependency item for module '" << item.importingModule->name() << "': ";
+	std::cout << item.import->module() << "::" << item.import->name();
+	std::cout << " (type: " << item.exportedItem.mExportType.name() << " idx: " << item.exportedItem.mIndex << ")" << std::endl;
+
+	if (!listBegin) {
+		listBegin = unresolvedImports.add(std::move(item));
+	}
+	else {
+		listBegin = unresolvedImports.add(*listBegin, std::move(item));
 	}
 }
 

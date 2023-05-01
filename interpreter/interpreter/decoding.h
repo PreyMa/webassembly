@@ -90,6 +90,7 @@ namespace WASM {
 
 		void print(std::ostream&) const;
 		bool isValid(u32 range) const;
+		bool matches(const Limits&) const;
 	
 	private:
 		u32 mMin;
@@ -237,39 +238,102 @@ namespace WASM {
 		std::vector<CompressedLocalTypes> compressedLocalTypes;
 	};
 
-	struct Imported {
-		std::string module;
-		std::string name;
-	};
+	class Imported {
+	public:
+		Imported(std::string m, std::string n) : mModule{ std::move(m) }, mName{ std::move(n) } {}
 
-	struct FunctionImport final : public Imported {
-		u32 moduleBasedFunctionTypeIndex;
-		u32 deduplicatedFunctionTypeIndex{ 0 };
-		Nullable<Function> resolvedFunction;
-	};
+		auto& module() const { return mModule; }
+		auto& name() const { return mName; }
+		std::string scopedName() const;
 
-	struct TableImport final : public Imported {
-		TableType tableType;
-		Nullable<FunctionTable> resolvedTable;
-	};
-
-	struct MemoryImport final : public Imported {
-		MemoryType memoryType;
-		Nullable<Memory> resolvedMemory;
-	};
-
-	struct GlobalImport final : public Imported {
-		GlobalImport(std::string m, std::string n, GlobalType tp)
-			: Imported{ std::move(m), std::move(n) }, globalType{ tp }, resolvedGlobal32{} {}
-
-		GlobalType globalType;
-
-		Nullable<const GlobalBase> getBase() const;
+		virtual ExportType requiredExportType() const = 0;
+		virtual bool isResolved() const = 0;
+		virtual bool tryResolveFromModuleWithIndex(Module&, u32) = 0;
+		virtual bool isTypeCompatible() const = 0;
 
 	private:
+		std::string mModule;
+		std::string mName;
+	};
+
+	class FunctionImport final : public Imported {
+	public:
+		FunctionImport(std::string m, std::string n, u32 idx)
+			: Imported{ std::move(m), std::move(n) }, mModuleBasedFunctionTypeIndex{ idx } {}
+
+		auto& moduleBasedFunctionTypeIndex() const { return mModuleBasedFunctionTypeIndex; }
+		auto& deduplicatedFunctionTypeIndex() const { return *mDeduplicatedFunctionTypeIndex; }
+		auto& resolvedFunction() const { return mResolvedFunction; }
+
+		bool hasDeduplicatedFunctionTypeIndex() const { return mDeduplicatedFunctionTypeIndex.has_value(); }
+		void deduplicatedFunctionTypeIndex(u32 idx);
+
+		virtual ExportType requiredExportType() const override;
+		virtual bool isResolved() const override;
+		virtual bool tryResolveFromModuleWithIndex(Module&, u32) override;
+		virtual bool isTypeCompatible() const override;
+
+	private:
+		u32 mModuleBasedFunctionTypeIndex;
+		std::optional<u32> mDeduplicatedFunctionTypeIndex;
+		Nullable<Function> mResolvedFunction;
+	};
+
+	class TableImport final : public Imported {
+	public:
+		TableImport(std::string m, std::string n, TableType type)
+			: Imported{ std::move(m), std::move(n) }, mTableType{ type } {}
+
+		auto& tableType() const { return mTableType; }
+		auto& resolvedTable() const { return mResolvedTable; }
+
+		virtual ExportType requiredExportType() const override;
+		virtual bool isResolved() const override;
+		virtual bool tryResolveFromModuleWithIndex(Module&, u32) override;
+		virtual bool isTypeCompatible() const override;
+
+	private:
+		TableType mTableType;
+		Nullable<FunctionTable> mResolvedTable;
+	};
+
+	class MemoryImport final : public Imported {
+	public:
+		MemoryImport(std::string m, std::string n, MemoryType type)
+			: Imported{ std::move(m), std::move(n) }, mMemoryType{ type } {}
+
+		auto& memoryType() const { return mMemoryType; }
+		auto& resolvedMemory() const { return mResolvedMemory; }
+
+		virtual ExportType requiredExportType() const override;
+		virtual bool isResolved() const override;
+		virtual bool tryResolveFromModuleWithIndex(Module&, u32) override;
+		virtual bool isTypeCompatible() const override;
+
+	private:
+		MemoryType mMemoryType;
+		Nullable<Memory> mResolvedMemory;
+	};
+
+	class GlobalImport final : public Imported {
+	public:
+		GlobalImport(std::string m, std::string n, GlobalType tp)
+			: Imported{ std::move(m), std::move(n) }, mGlobalType{ tp }, mResolvedGlobal32{} {}
+
+		auto& globalType() const { return mGlobalType; }
+
+		Nullable<const GlobalBase> getBase() const;
+		virtual ExportType requiredExportType() const override;
+		virtual bool isResolved() const override;
+		virtual bool tryResolveFromModuleWithIndex(Module&, u32) override;
+		virtual bool isTypeCompatible() const override;
+
+	private:
+		GlobalType mGlobalType;
+
 		union {
-			Nullable<Global<u32>> resolvedGlobal32;
-			Nullable<Global<u64>> resolvedGlobal64;
+			Nullable<Global<u32>> mResolvedGlobal32;
+			Nullable<Global<u64>> mResolvedGlobal64;
 		};
 	};
 

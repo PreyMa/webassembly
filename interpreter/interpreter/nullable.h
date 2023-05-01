@@ -37,6 +37,8 @@ namespace WASM {
 		template<typename U>
 		Nullable operator=(const Nullable<U>& x) { ptr = x.ptr; return *this; };
 
+		void clear() { ptr = nullptr; }
+
 	private:
 		Nullable(T* p) : ptr{ p } {}
 

@@ -54,11 +54,11 @@ namespace WASM {
 	class HostFunctionBase;
 	template<typename> class HostFunction;
 
-	struct Imported;
-	struct FunctionImport;
-	struct TableImport;
-	struct MemoryImport;
-	struct GlobalImport;
+	class Imported;
+	class FunctionImport;
+	class TableImport;
+	class MemoryImport;
+	class GlobalImport;
 
 	class Bytecode;
 	class BytecodeArguments;
@@ -74,4 +74,6 @@ namespace WASM {
 
 	template<typename> class ArrayList;
 	template<typename> class SealedVector;
+
+	template<typename> class VirtualSpan;
 }

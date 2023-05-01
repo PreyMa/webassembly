@@ -220,33 +220,33 @@ void DebugLogger::onParsingImportSection(
 		stream << "-> Parsed import section containing " << numImports << " import items" << std::endl;
 
 		auto printImport = [&](ImportType type, const Imported& imported) {
-			stream << "  - " << type.name() << ": " << imported.module << " :: " << imported.name;
+			stream << "  - " << type.name() << ": " << imported.module() << " :: " << imported.name();
 		};
 
 		u32 i = 0;
 		for (auto& funcImport : functionImports) {
 			printImport(ImportType::FunctionImport, funcImport);
-			stream << " (id: " << i++ << ") indexing type: " << funcImport.moduleBasedFunctionTypeIndex << std::endl;
+			stream << " (id: " << i++ << ") indexing type: " << funcImport.moduleBasedFunctionTypeIndex() << std::endl;
 		}
 
 		for (auto& tableImport : tableImports) {
 			printImport(ImportType::TableImport, tableImport);
 			stream << " type: ";
-			tableImport.tableType.print(stream);
+			tableImport.tableType().print(stream);
 			stream << std::endl;
 		}
 
 		for (auto& memImport : memoryImports) {
 			printImport(ImportType::MemoryImport, memImport);
 			stream << " type: ";
-			memImport.memoryType.print(stream);
+			memImport.memoryType().print(stream);
 			stream << std::endl;
 		}
 
 		for (auto& globalImport : globalImports) {
 			printImport(ImportType::GlobalImport, globalImport);
-			stream << " type: " << globalImport.globalType.isMutable() ? "mutable" : "constant";
-			stream << " " << globalImport.globalType.valType().name() << std::endl;
+			stream << " type: " << globalImport.globalType().isMutable() ? "mutable" : "constant";
+			stream << " " << globalImport.globalType().valType().name() << std::endl;
 		}
 	}
 }

@@ -1050,6 +1050,25 @@ bool Limits::isValid(u32 range) const
 	return true;
 }
 
+bool Limits::matches(const Limits& other) const
+{
+	// To have this limits object match another limits object the min value
+	// has to be greater or equal to the other. If the other does not have 
+	// a max value return true. If the other has a max value, this object 
+	// needs to have one too, which also has to be smaller or equal.
+	// https://webassembly.github.io/spec/core/valid/types.html#match-limits
+
+	if (mMin < other.mMin) {
+		return false;
+	}
+
+	if (!other.mMax.has_value()) {
+		return true;
+	}
+
+	return other.mMax.has_value() && mMax.has_value() && *mMax <= *other.mMax;
+}
+
 void TableType::print(std::ostream& out) const
 {
 	out << "Table: " << mElementReferenceType.name() << ' ';
@@ -1304,7 +1323,7 @@ const FunctionType& ModuleValidator::functionTypeByIndex(u32 funcIdx)
 {
 	u32 typeIdx;
 	if (funcIdx < s().importedFunctions.size()) {
-		typeIdx= s().importedFunctions[funcIdx].moduleBasedFunctionTypeIndex;
+		typeIdx= s().importedFunctions[funcIdx].moduleBasedFunctionTypeIndex();
 	}
 	else {
 		funcIdx -= s().importedFunctions.size();
@@ -1497,12 +1516,12 @@ void ModuleValidator::validateImports()
 	
 	// Validate table imports
 	for (auto& tableType : s().importedTableTypes) {
-		validateTableType(tableType.tableType);
+		validateTableType(tableType.tableType());
 	}
 	
 	// Validate memory imports
 	for (auto& memType : s().importedMemoryTypes) {
-		validateMemoryType(memType.memoryType);
+		validateMemoryType(memType.memoryType());
 	}
 	
 	// Validate global imports -> global types are valid
@@ -1575,11 +1594,163 @@ void ParsingState::clear()
 
 Nullable<const GlobalBase> GlobalImport::getBase() const
 {
-	if (globalType.valType().sizeInBytes() == 4) {
-		auto& ptr= *resolvedGlobal32;
+	if (mGlobalType.valType().sizeInBytes() == 4) {
+		auto& ptr= *mResolvedGlobal32;
 		return ptr;
 	}
 
-	auto& ptr = *resolvedGlobal64;
+	auto& ptr = *mResolvedGlobal64;
 	return ptr;
+}
+
+ExportType GlobalImport::requiredExportType() const
+{
+	return ExportType::GlobalIndex;
+}
+
+bool GlobalImport::isResolved() const
+{
+	if (mGlobalType.valType().sizeInBytes() == 4) {
+		return mResolvedGlobal32.has_value();
+	}
+
+	return mResolvedGlobal64.has_value();
+}
+
+bool GlobalImport::tryResolveFromModuleWithIndex(Module& module, u32 idx)
+{
+	auto resolvedGlobal = module.globalByIndex(idx);
+	if (!resolvedGlobal.has_value()) {
+		return false;
+	}
+
+	// Check if types match. Return true even if the types do not match, because
+	// the type was still found altough it could not be matched. 'isTypeCompatible()'
+	// therefore only checks if something was resolved as the type checking happens here
+	// already.
+	// Types are compatible if they are the same.
+	// https://webassembly.github.io/spec/core/valid/types.html#globals
+	auto expectedBytes = mGlobalType.valType().sizeInBytes();
+	if (expectedBytes != resolvedGlobal->type.valType().sizeInBytes()) {
+		if (expectedBytes == 4) {
+			mResolvedGlobal32.clear();
+		}
+		else {
+			mResolvedGlobal64.clear();
+		}
+
+		return true;
+	}
+
+	// TODO: Remove the ugly const casts
+	if (expectedBytes == 4) {
+		mResolvedGlobal32 = const_cast<Global<u32>&>(reinterpret_cast<const Global<u32>&>(resolvedGlobal->instance));
+	}
+	else {
+		mResolvedGlobal64 = const_cast<Global<u64>&>(reinterpret_cast<const Global<u64>&>(resolvedGlobal->instance));
+	}
+
+	return true;
+}
+
+bool GlobalImport::isTypeCompatible() const
+{
+	// Type checking happens in 'tryResolvefromModuleWithIndex()'
+	return isResolved();
+}
+
+void FunctionImport::deduplicatedFunctionTypeIndex(u32 idx)
+{
+	if (hasDeduplicatedFunctionTypeIndex()) {
+		throw std::runtime_error{"Function import already has a deduplicated function type index"};
+	}
+
+	mDeduplicatedFunctionTypeIndex = idx;
+}
+
+ExportType FunctionImport::requiredExportType() const
+{
+	return ExportType::FunctionIndex;
+}
+
+bool FunctionImport::isResolved() const
+{
+	return mResolvedFunction.has_value();
+}
+
+bool FunctionImport::tryResolveFromModuleWithIndex(Module& module, u32 idx)
+{
+	mResolvedFunction = module.functionByIndex(idx);
+	return isResolved();
+}
+
+bool FunctionImport::isTypeCompatible() const
+{
+	// Types are compatible if they are the same.
+	// https://webassembly.github.io/spec/core/valid/types.html#functions
+
+	return isResolved()
+		&& mResolvedFunction->deduplicatedTypeIndex() == mDeduplicatedFunctionTypeIndex;
+}
+
+ExportType MemoryImport::requiredExportType() const
+{
+	return ExportType::MemoryIndex;
+}
+
+bool MemoryImport::isResolved() const
+{
+	return mResolvedMemory.has_value();
+}
+
+bool MemoryImport::tryResolveFromModuleWithIndex(Module& module, u32 idx)
+{
+	mResolvedMemory = module.memoryByIndex(idx);
+	return isResolved();
+}
+
+bool MemoryImport::isTypeCompatible() const
+{
+	// Types are compatible if the external memory limits match the import declaration.
+	// https://webassembly.github.io/spec/core/valid/types.html#memories
+
+	return isResolved()
+		&& mResolvedMemory->limits().matches(mMemoryType.limits());
+}
+
+ExportType TableImport::requiredExportType() const
+{
+	return ExportType::TableIndex;
+}
+
+bool TableImport::isResolved() const
+{
+	return mResolvedTable.has_value();
+}
+
+bool TableImport::tryResolveFromModuleWithIndex(Module& module, u32 idx)
+{
+	mResolvedTable = module.tableByIndex(idx);
+	return isResolved();
+}
+
+bool TableImport::isTypeCompatible() const
+{
+	// Types are compatible if the external table limits match the import declaration, 
+	// and if both val types are the same.
+	// https://webassembly.github.io/spec/core/valid/types.html#tables
+
+	return isResolved()
+		&& mResolvedTable->type() == mTableType.valType()
+		&& mResolvedTable->limits().matches(mTableType.limits());
+}
+
+std::string Imported::scopedName() const
+{
+	std::string itemName;
+	itemName.reserve(mModule.size() + mName.size() + 2);
+	itemName += mModule;
+	itemName += "::";
+	itemName += mName;
+	return itemName;
 }

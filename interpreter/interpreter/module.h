@@ -76,6 +76,7 @@ namespace WASM {
 	public:
 		FunctionTable(u32, const TableType&);
 
+		auto& limits() const { return mLimits; }
 		ValType type() const { return mType; }
 
 		i32 grow(i32, Nullable<Function>);
@@ -84,7 +85,7 @@ namespace WASM {
 	private:
 		u32 index;
 		ValType mType;
-		Limits limits;
+		Limits mLimits;
 		std::vector<Nullable<Function>> table;
 	};
 
@@ -120,21 +121,22 @@ namespace WASM {
 
 		i32 grow(i32);
 
+		auto& limits() const { return mLimits; }
 		u64 minBytes() const;
 		std::optional<u64> maxBytes() const;
 		sizeType currentSize() const;
 
 		__forceinline u8* pointer(u32 idx) {
-			if (idx > data.size()) {
+			if (idx > mData.size()) {
 				throw std::runtime_error{ "Out of bounds memory access" };
 			}
-			return data.data()+ idx;
+			return mData.data()+ idx;
 		}
 
 	private:
-		u32 index;
-		Limits limits;
-		std::vector<u8> data;
+		u32 mIndex;
+		Limits mLimits;
+		std::vector<u8> mData;
 	};
 
 	class GlobalBase {};
@@ -255,10 +257,23 @@ namespace WASM {
 		void link();
 
 	private:
+		struct DependencyItem {
+			NonNull<Imported> import;
+			NonNull<const Module> importingModule;
+			NonNull<Module> exportingModule;
+			ExportItem exportedItem{ ExportType::FunctionIndex };
+		};
+
 		void buildDeduplicatedFunctionTypeTable();
-		void linkDependcies();
+		sizeType countDependencyItems();
+		void createDependencyItems(const Module&, VirtualSpan<Imported>);
+		void linkDependencies();
+		void addDepenencyItem(DependencyItem);
 
 		void throwLinkError(const Module&, const Imported&, const char*) const;
+
+		ArrayList<DependencyItem> unresolvedImports;
+		std::optional<sizeType> listBegin;
 
 		Interpreter& interpreter;
 	};
