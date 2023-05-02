@@ -47,6 +47,6 @@ namespace WASM {
 		};
 
 		template<typename TLambda>
-		using MakeLambdaTyper = Detail::LambdaTyper<decltype(&TLambda::operator())>;
+		using MakeLambdaTyper = LambdaTyper<decltype(&TLambda::operator())>;
 	}
 }

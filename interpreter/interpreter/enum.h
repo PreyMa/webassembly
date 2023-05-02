@@ -15,8 +15,8 @@ namespace WASM {
 			return TSpecial{ (TStorage)x };
 		}
 
-		explicit Enum(TStorage v) : value{ v } {}
-		operator int() const { return value; }
+		explicit constexpr Enum(TStorage v) : value{ v } {}
+		constexpr operator int() const { return value; }
 
 		TSpecial operator=(TSpecial other) { value = other.value; return *this; }
 
@@ -63,7 +63,7 @@ namespace WASM {
 		};
 
 		using Enum<ValType, u8>::Enum;
-		ValType(TEnum e) : Enum<ValType, u8>{ e } {}
+		constexpr ValType(TEnum e) : Enum<ValType, u8>{ e } {}
 
 		// Requried for the local array in FunctionType
 		ValType() : Enum<ValType, u8>{ TEnum::I32 } {}
@@ -76,16 +76,16 @@ namespace WASM {
 		u32 sizeInBytes() const;
 
 		template<typename T>
-		static ValType fromType() {
+		static constexpr ValType fromType() {
 			static_assert(sizeof(T) == 0, "Unsupported val type");
 		}
 
-		template<> static ValType fromType<u32>() { return ValType::I32; }
-		template<> static ValType fromType<i32>() { return ValType::I32; }
-		template<> static ValType fromType<u64>() { return ValType::I64; }
-		template<> static ValType fromType<i64>() { return ValType::I64; }
-		template<> static ValType fromType<f32>() { return ValType::F32; }
-		template<> static ValType fromType<f64>() { return ValType::F64; }
+		template<> static constexpr ValType fromType<u32>() { return ValType::I32; }
+		template<> static constexpr ValType fromType<i32>() { return ValType::I32; }
+		template<> static constexpr ValType fromType<u64>() { return ValType::I64; }
+		template<> static constexpr ValType fromType<i64>() { return ValType::I64; }
+		template<> static constexpr ValType fromType<f32>() { return ValType::F32; }
+		template<> static constexpr ValType fromType<f64>() { return ValType::F64; }
 	};
 
 	class ExportType : public Enum<ExportType> {

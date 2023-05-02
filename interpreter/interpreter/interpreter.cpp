@@ -492,8 +492,12 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			continue;
 		}
 		case BC::CallIndirect:
-		case BC::CallHost:
 			break;
+		case BC::CallHost: {
+			auto callee = (HostFunctionBase*)loadOperandPtr();
+			stackPointer= callee->executeFunction(stackPointer);
+			continue;
+		}
 		case BC::Entry: {
 			modulePointer = (Module*)loadOperandPtr();
 			auto numLocals = loadOperandU32();
