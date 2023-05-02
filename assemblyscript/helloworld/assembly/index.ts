@@ -1,6 +1,6 @@
 // The entry file of your WebAssembly module.
 
-export let globalFloat: f32= 1.123;
+/*export let globalFloat: f32= 1.123;
 export let globalInt: i64= 123;
 export const globalConstInt: u32= 0;
 export let globalIntWithoutInit: u32;
@@ -48,4 +48,25 @@ export function create( x: u32 ) : SampleClass {
 
 export function dreck( k: SampleClass ) : string {
   return k.sayHello();
+}*/
+
+/*let aGlboalThing: i64= 1234;
+
+export function doSet(x: i64): void {
+  aGlboalThing= x;
 }
+
+export function doGet(): i64 {
+  return aGlboalThing;
+}
+
+export function doLocal(x: i64): i64 {
+  let value: i64= 0;
+  value= x;
+  let y= value+ 1;
+  return y;
+}*/
+
+import { printInt } from "./env";
+
+printInt(32);
