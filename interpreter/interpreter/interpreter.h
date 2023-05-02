@@ -2,7 +2,7 @@
 
 #include <array>
 
-#include "host_function.h"
+#include "host_module.h"
 
 namespace WASM {
 	class Value {
@@ -57,6 +57,7 @@ namespace WASM {
 		~Interpreter();
 
 		void loadModule(std::string);
+		void registerHostModule(HostModule);
 		void compileAndLinkModules();
 
 		FunctionHandle functionByName(std::string_view, std::string_view);
@@ -80,6 +81,8 @@ namespace WASM {
 			const Module& module;
 		};
 
+		void registerModuleName(NonNull<ModuleBase>);
+
 		ValuePack executeFunction(Function&, std::span<Value>);
 		ValuePack runInterpreterLoop(const BytecodeFunction&, std::span<Value>);
 
@@ -91,8 +94,9 @@ namespace WASM {
 		void dumpStack(std::ostream&) const;
 		std::optional<FunctionLookup> findFunctionByBytecodePointer(const u8*) const;
 
-		std::list<Module> modules;
-		std::unordered_map<std::string, NonNull<Module>> moduleNameMap;
+		std::list<Module> wasmModules;
+		std::list<HostModule> hostModules;
+		std::unordered_map<std::string, NonNull<ModuleBase>> moduleNameMap;
 		SealedVector<FunctionType> functionTypes;
 
 		bool hasLinked{ false };

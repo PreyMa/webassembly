@@ -48,6 +48,7 @@ namespace WASM {
 		virtual void onAddingLinkingDependency(const Module& importingModule, const Imported& import, u32 idx) = 0;
 		virtual void onLinkingDependencyResolved(const Module& importingModule, const Imported& import) = 0;
 
+		virtual void onRegisteredModule(const ModuleBase&) = 0;
 		virtual void onModuleTableInitialized(const Module&, sizeType, sizeType) = 0;
 	};
 
@@ -87,6 +88,7 @@ namespace WASM {
 		virtual void onAddingLinkingDependency(const Module& importingModule, const Imported& import, u32 idx) override;
 		virtual void onLinkingDependencyResolved(const Module& importingModule, const Imported& import) override;
 
+		virtual void onRegisteredModule(const ModuleBase&) override;
 		virtual void onModuleTableInitialized(const Module&, sizeType, sizeType) override;
 
 	protected:

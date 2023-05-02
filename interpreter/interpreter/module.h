@@ -158,15 +158,29 @@ namespace WASM {
 		T storage{ 0 };
 	};
 
+	struct ResolvedGlobal {
+		const GlobalBase& instance;
+		const GlobalType& type;
+	};
+
+	class ModuleBase {
+	public:
+		virtual Nullable<HostModule> asHostModule() { return {}; }
+		virtual Nullable<Module> asWasmModule() { return {}; }
+		virtual std::string_view name() const = 0;
+		virtual Nullable<Function> exportedFunctionByName(const std::string&) = 0;
+		virtual Nullable<FunctionTable> exportedTableByName(const std::string&) = 0;
+		virtual Nullable<Memory> exportedMemoryByName(const std::string&) = 0;
+		virtual std::optional<ResolvedGlobal> exportedGlobalByName(const std::string&) = 0;
+
+		Nullable<const HostModule> asHostModule() const { return const_cast<ModuleBase&>(*this).asHostModule(); }
+		Nullable<const Module> asWasmModule() const { return const_cast<ModuleBase&>(*this).asWasmModule(); }
+	};
+
 	using ExportTable = std::unordered_map<std::string, ExportItem>;
 
-	class Module {
+	class Module final : public ModuleBase {
 	public:
-		struct ResolvedGlobal {
-			const GlobalBase& instance;
-			const GlobalType& type;
-		};
-
 		Module(
 			Buffer b,
 			std::string p,
@@ -189,7 +203,9 @@ namespace WASM {
 		);
 		Module(Module&& m) = default;
 
-		const std::string& name() const { return mName; }
+		virtual Nullable<Module> asWasmModule() override { return *this; }
+		virtual std::string_view name() const override { return mName; }
+
 		bool needsLinking() const { return compilationData != nullptr; }
 		void initTables(Nullable<Introspector>);
 		void initGlobals(Nullable<Introspector>);
@@ -204,8 +220,11 @@ namespace WASM {
 		Nullable<const Function> findFunctionByBytecodePointer(const u8*) const;
 
 		std::optional<ExportItem> exportByName(const std::string&, ExportType) const;
-		Nullable<Function> exportedFunctionByName(const std::string&);
 		Nullable<const std::string> functionNameByIndex(u32) const;
+		virtual Nullable<Function> exportedFunctionByName(const std::string&) override;
+		virtual Nullable<FunctionTable> exportedTableByName(const std::string&) override;
+		virtual Nullable<Memory> exportedMemoryByName(const std::string&) override;
+		virtual std::optional<ResolvedGlobal> exportedGlobalByName(const std::string&) override;
 
 	private:
 		friend class ModuleCompiler;
@@ -381,7 +400,7 @@ namespace WASM {
 		void resetCachedReturnList(u32);
 
 		BytecodeFunction::LocalOffset localByIndex(u32) const;
-		Module::ResolvedGlobal globalByIndex(u32) const;
+		ResolvedGlobal globalByIndex(u32) const;
 		const FunctionType& blockTypeByIndex(u32);
 		const Memory& memoryByIndex(u32);
 		u32 measureMaxPrintedBlockLength(u32, u32, bool= false) const;

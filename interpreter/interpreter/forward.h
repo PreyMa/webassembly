@@ -13,6 +13,7 @@ namespace WASM {
 	class TableType;
 	class MemoryType;
 	class GlobalType;
+	class DeclaredHostGlobal;
 	class DeclaredGlobal;
 	class Export;
 	class Element;
@@ -49,10 +50,15 @@ namespace WASM {
 	class Memory;
 	class GlobalBase;
 	template<typename> class Global;
+	struct ResolvedGlobal;
+	class ModuleBase;
 	class Module;
 
 	class HostFunctionBase;
 	template<typename> class HostFunction;
+
+	class HostModuleBuilder;
+	class HostModule;
 
 	class Imported;
 	class FunctionImport;

@@ -336,7 +336,7 @@ Nullable<Function> Module::functionByIndex(u32 idx)
 	return functions[idx];
 }
 
-std::optional<Module::ResolvedGlobal> Module::globalByIndex(u32 idx)
+std::optional<ResolvedGlobal> Module::globalByIndex(u32 idx)
 {
 	if (!compilationData) {
 		return {};
@@ -442,6 +442,36 @@ Nullable<Function> Module::exportedFunctionByName(const std::string& name)
 	return functionByIndex(exp->mIndex);
 }
 
+Nullable<FunctionTable> Module::exportedTableByName(const std::string& name)
+{
+	auto exp = exportByName(name, ExportType::TableIndex);
+	if (!exp.has_value()) {
+		return {};
+	}
+
+	return tableByIndex(exp->mIndex);
+}
+
+Nullable<Memory> Module::exportedMemoryByName(const std::string& name)
+{
+	auto exp = exportByName(name, ExportType::MemoryIndex);
+	if (!exp.has_value()) {
+		return {};
+	}
+
+	return memoryByIndex(exp->mIndex);
+}
+
+std::optional<ResolvedGlobal> Module::exportedGlobalByName(const std::string& name)
+{
+	auto exp = exportByName(name, ExportType::GlobalIndex);
+	if (!exp.has_value()) {
+		return {};
+	}
+
+	return globalByIndex(exp->mIndex);
+}
+
 Nullable<const std::string> Module::functionNameByIndex(u32 functionIdx) const
 {
 	auto fnd = functionNameMap.find(functionIdx);
@@ -452,9 +482,79 @@ Nullable<const std::string> Module::functionNameByIndex(u32 functionIdx) const
 	return fnd->second;
 }
 
+HostModule HostModuleBuilder::toModule() {
+	u32 idx = 0;
+	for (auto& function : mFunctions) {
+		function.second->setIndex(idx++);
+	}
+
+	return HostModule{
+		std::move(mName),
+		std::move(mFunctions),
+		std::move(mGlobals),
+		std::move(mGlobals32),
+		std::move(mGlobals64)
+	};
+}
+
+HostModule::HostModule(
+	std::string n,
+	SealedUnorderedMap<std::string, std::unique_ptr<HostFunctionBase>> fs,
+	SealedUnorderedMap<std::string, DeclaredHostGlobal> dg,
+	SealedVector<Global<u32>> g32,
+	SealedVector<Global<u64>> g64
+)
+	: mName{ std::move(n) },
+	mFunctions{ std::move(fs) },
+	mGlobals{ std::move(dg) },
+	mGlobals32{ std::move(g32) },
+	mGlobals64{ std::move(g64) }
+{
+}
+
+Nullable<Function> HostModule::exportedFunctionByName(const std::string& name) {
+	auto fnd= mFunctions.find(name);
+	if (fnd == mFunctions.end()) {
+		return {};
+	}
+
+	return Nullable<Function>::fromPointer(fnd->second);
+}
+
+Nullable<FunctionTable> HostModule::exportedTableByName(const std::string&)
+{
+	return {};
+}
+
+Nullable<Memory> HostModule::exportedMemoryByName(const std::string&)
+{
+	return {};
+}
+
+std::optional<ResolvedGlobal> HostModule::exportedGlobalByName(const std::string& name)
+{
+	auto fnd = mGlobals.find(name);
+	if (fnd == mGlobals.end()) {
+		return {};
+	}
+
+	auto& declaredGlobal = fnd->second;
+	assert(declaredGlobal.indexInTypedStorageArray().has_value());
+	u32 storageIndex = *declaredGlobal.indexInTypedStorageArray();
+
+	auto& globalType = declaredGlobal.type();
+	if (globalType.valType().sizeInBytes() == 4) {
+		assert(storageIndex < mGlobals32.size());
+		return ResolvedGlobal{ mGlobals32[storageIndex], globalType };
+	}
+
+	assert(storageIndex < mGlobals64.size());
+	return ResolvedGlobal{ mGlobals64[storageIndex], globalType };
+}
+
 void ModuleLinker::link()
 {
-	if (interpreter.modules.empty()) {
+	if (interpreter.wasmModules.empty()) {
 		throw std::runtime_error{ "Nothing to link" };
 	}
 
@@ -468,7 +568,7 @@ void ModuleLinker::link()
 
 	countDependencyItems();
 
-	for (auto& module : interpreter.modules) {
+	for (auto& module : interpreter.wasmModules) {
 		auto& compilationData = *module.compilationData;
 		createDependencyItems(module, compilationData.importedFunctions);
 		createDependencyItems(module, compilationData.importedGlobals);
@@ -486,9 +586,6 @@ void ModuleLinker::link()
 	linkMemoryInstances();
 	linkStartFunctions();
 
-	// FIXME: This is some hard coded linking just for testing
-	assert(interpreter.modules.size() == 1);
-	assert(interpreter.modules.front().compilationData);
 	/*assert(modules[0].compilationData->importedFunctions.size() == 1);
 
 	static HostFunction abortFunction = [&](u32, u32, u32, u32) { std::cout << "Abort called"; };
@@ -499,24 +596,13 @@ void ModuleLinker::link()
 
 	modules[0].compilationData->importedFunctions[0].resolvedFunction = abortFunction;*/
 
-	assert(interpreter.modules.size() == 1);
-	assert(interpreter.modules.front().compilationData);
-	if (interpreter.modules.front().compilationData->startFunctionIndex.has_value()) {
-		assert(interpreter.modules.front().compilationData->startFunctionIndex >= interpreter.modules.front().numImportedFunctions);
-		assert(*interpreter.modules.front().compilationData->startFunctionIndex- interpreter.modules.front().numImportedFunctions < interpreter.modules.front().functions.size());
-		interpreter.modules.front().mStartFunction = interpreter.modules.front().functions[*interpreter.modules.front().compilationData->startFunctionIndex- interpreter.modules.front().numImportedFunctions];
-	}
-
-	assert(!interpreter.modules.front().compilationData->importedMemory.has_value());
-	interpreter.modules.front().linkedMemory = *interpreter.modules.front().ownedMemoryInstance;
-
 	if (introspector.has_value()) {
 		introspector->onModuleLinkingFinished();
 	}
 }
 
 void ModuleLinker::checkModulesLinkStatus() {
-	for (auto& module : interpreter.modules) {
+	for (auto& module : interpreter.wasmModules) {
 		if( !module.needsLinking() ) {
 			throwLinkError(module, "<none>", "Module already linked");
 		}
@@ -525,20 +611,20 @@ void ModuleLinker::checkModulesLinkStatus() {
 
 void ModuleLinker::throwLinkError(const Module& module, const Imported& item, const char* message) const
 {
-	throw LinkError{ module.name(), item.scopedName(), std::string{message}};
+	throw LinkError{ std::string{module.name()}, item.scopedName(), std::string{message} };
 }
 
 void ModuleLinker::throwLinkError(const Module& module, const char* itemName, const char* message) const
 {
-	throw LinkError{ module.name(), itemName, std::string{message} };
+	throw LinkError{ std::string{module.name()}, itemName, std::string{message} };
 }
 
-void WASM::ModuleLinker::initGlobals()
+void ModuleLinker::initGlobals()
 {
 	// Globals might reference imports from other modules, so they can only be
 	// initialized with values after all imorts have been resolved.
 
-	for (auto& module : interpreter.modules) {
+	for (auto& module : interpreter.wasmModules) {
 		for (auto& declaredGlobal : module.compilationData->globalTypes) {
 			auto initValue= declaredGlobal.initExpression().constantUntypedValue(module);
 
@@ -555,12 +641,12 @@ void WASM::ModuleLinker::initGlobals()
 	}
 }
 
-void WASM::ModuleLinker::linkMemoryInstances()
+void ModuleLinker::linkMemoryInstances()
 {
 	// Set the modules memory instance after resolving imports, as the module might
 	// import its memory instance from another module.
 
-	for (auto& module : interpreter.modules) {
+	for (auto& module : interpreter.wasmModules) {
 		auto mem= module.memoryByIndex(0);
 		if (mem.has_value()) {
 			module.linkedMemory = mem;
@@ -568,9 +654,9 @@ void WASM::ModuleLinker::linkMemoryInstances()
 	}
 }
 
-void WASM::ModuleLinker::linkStartFunctions()
+void ModuleLinker::linkStartFunctions()
 {
-	for (auto& module : interpreter.modules) {
+	for (auto& module : interpreter.wasmModules) {
 		auto idx= module.compilationData->startFunctionIndex;
 		if (idx.has_value()) {
 			auto function= module.mStartFunction = module.functionByIndex(*idx);
@@ -585,17 +671,27 @@ void WASM::ModuleLinker::linkStartFunctions()
 
 void ModuleLinker::buildDeduplicatedFunctionTypeTable()
 {
-	auto& modules = interpreter.modules;
+	auto& modules = interpreter.wasmModules;
 	std::vector<FunctionType> dedupedFunctionTypes;
 	dedupedFunctionTypes.reserve(modules.front().compilationData->functionTypes.size());
+
+	const auto insertDedupedFunctionType = [&](const FunctionType& type) {
+		auto findIt = std::find(dedupedFunctionTypes.begin(), dedupedFunctionTypes.end(), type);
+		if (findIt == dedupedFunctionTypes.end()) {
+			dedupedFunctionTypes.emplace_back(type);
+		}
+	};
 
 	for (auto& module : modules) {
 		auto& types = module.compilationData->functionTypes;
 		for (auto& type : types) {
-			auto findIt = std::find(dedupedFunctionTypes.begin(), dedupedFunctionTypes.end(), type);
-			if (findIt == dedupedFunctionTypes.end()) {
-				dedupedFunctionTypes.emplace_back(type);
-			}
+			insertDedupedFunctionType(type);
+		}
+	}
+
+	for (auto& module : interpreter.hostModules) {
+		for (auto& function : module.mFunctions) {
+			insertDedupedFunctionType(function.second->functionType());
 		}
 	}
 
@@ -624,13 +720,24 @@ void ModuleLinker::buildDeduplicatedFunctionTypeTable()
 		}
 	}
 
+	for (auto& module : interpreter.hostModules) {
+		for (auto& functionPair : module.mFunctions) {
+			auto& function = *functionPair.second;
+
+			auto findIt = std::find(dedupedFunctionTypes.begin(), dedupedFunctionTypes.end(), function.functionType());
+			assert(findIt != dedupedFunctionTypes.end());
+			
+			function.setLinkedFunctionType(findIt - dedupedFunctionTypes.begin());
+		}
+	}
+
 	interpreter.functionTypes = std::move(dedupedFunctionTypes);
 }
 
 sizeType ModuleLinker::countDependencyItems()
 {
 	sizeType numSlots = 0;
-	for (auto& module : interpreter.modules) {
+	for (auto& module : interpreter.wasmModules) {
 		numSlots += module.numImportedFunctions;
 		numSlots += module.numImportedGlobals;
 		numSlots += module.numImportedMemories;
@@ -647,13 +754,35 @@ void ModuleLinker::createDependencyItems(const Module& module, VirtualSpan<Impor
 			throwLinkError(module, imported, "Importing from unknown module");
 		}
 
-		auto& exportModule = *moduleFnd->second;
-		auto exportItem = exportModule.exportByName(imported.name(), imported.requiredExportType());
+		// Immediately link to host module dependencies, as host module cannot re-export items
+		auto hostModule = moduleFnd->second->asHostModule();
+		if (hostModule.has_value()) {
+			if (!imported.tryResolveFromModuleWithName(*hostModule)) {
+				throwLinkError(module, imported, "Importing unkown item from (host) module");
+			}
+
+			if (!imported.isTypeCompatible()) {
+				throwLinkError(module, imported, "The types of the import and (host) export are incompatible");
+			}
+
+			if (introspector.has_value()) {
+				introspector->onLinkingDependencyResolved(module, imported);
+			}
+
+			assert(imported.isResolved());
+			continue;
+		}
+
+		// Create dependency item for imports from wasm modules
+		auto exportModule = moduleFnd->second->asWasmModule();
+		assert(exportModule.has_value());
+
+		auto exportItem = exportModule->exportByName(imported.name(), imported.requiredExportType());
 		if (!exportItem.has_value()) {
 			throwLinkError(module, imported, "Importing unkown item from module");
 		}
 
-		DependencyItem item{ imported, module, exportModule, *exportItem };
+		DependencyItem item{ imported, module, *exportModule, *exportItem };
 		addDepenencyItem(item);
 	}
 }
@@ -835,7 +964,7 @@ void ModuleCompiler::compileFunction(BytecodeFunction& function)
 	maxStackHeightInBytes += localsSizeInBytes;
 	function.setMaxStackHeight(maxStackHeightInBytes / 4);
 
-	auto modName = module.name();
+	std::string modName{ module.name() };
 	if (modName.size() > 20) {
 		modName = "..." + modName.substr(modName.size() - 17);
 	}
@@ -951,7 +1080,7 @@ BytecodeFunction::LocalOffset ModuleCompiler::localByIndex(u32 idx) const
 	throwCompilationError("Local index out of bounds");
 }
 
-Module::ResolvedGlobal ModuleCompiler::globalByIndex(u32 idx) const
+ResolvedGlobal ModuleCompiler::globalByIndex(u32 idx) const
 {
 	auto global = module.globalByIndex(idx);
 	if (global.has_value()) {
@@ -1759,7 +1888,7 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 		}
 	};
 
-	auto printGlobalTypeInstruction = [&](Module::ResolvedGlobal global, Bytecode cmd32, Bytecode cmd64) {
+	auto printGlobalTypeInstruction = [&](ResolvedGlobal global, Bytecode cmd32, Bytecode cmd64) {
 		if (isReachable()) {
 			u32 numBytes = global.type.valType().sizeInBytes();
 			if (numBytes != 4 && numBytes != 8) {
@@ -2204,7 +2333,7 @@ void ModuleCompiler::printBytecode(std::ostream& out)
 void ModuleCompiler::throwCompilationError(const char* msg) const
 {
 	if (currentFunction) {
-		throw CompileError{ module.name(), currentFunction->index(), std::string{msg} };
+		throw CompileError{ std::string{module.name()}, currentFunction->index(), std::string{msg} };
 	}
-	throw CompileError{ module.name(), std::string{msg} };
+	throw CompileError{ std::string{module.name()}, std::string{msg} };
 }

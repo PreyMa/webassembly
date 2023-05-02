@@ -366,6 +366,12 @@ void WASM::DebugLogger::onLinkingDependencyResolved(const Module& importingModul
 	}
 }
 
+void WASM::DebugLogger::onRegisteredModule(const ModuleBase& module)
+{
+	auto type = module.asHostModule().has_value() ? "host module" : "wasm module";
+	outStream() << "Registerd " << type << ": " << module.name() << std::endl;
+}
+
 void WASM::DebugLogger::onModuleTableInitialized(const Module& module, sizeType numElements, sizeType numFunctions)
 {
 	outStream() << "Initalized tables in module '" << module.name() << "'. " << numFunctions <<

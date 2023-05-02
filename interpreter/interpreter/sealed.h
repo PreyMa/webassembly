@@ -27,4 +27,27 @@ namespace WASM {
 	private:
 		std::vector<T> vector;
 	};
+
+	template<typename K, typename V>
+	class SealedUnorderedMap {
+	public:
+		SealedUnorderedMap(std::unordered_map<K, V> m) : map{ std::move(m) } {}
+		SealedUnorderedMap() = default;
+		SealedUnorderedMap(SealedUnorderedMap&&) = default;
+		SealedUnorderedMap(const SealedUnorderedMap&) = delete;
+
+		auto find(const K& key) { return map.find(key); }
+		auto find(const K& key) const { return map.find(key); }
+
+		sizeType size() const { return map.size(); }
+		auto begin() { return map.begin(); }
+		auto end() { return map.end(); }
+		auto begin() const { return map.begin(); }
+		auto end() const { return map.end(); }
+
+		SealedUnorderedMap& operator=(SealedUnorderedMap m) { map = std::move(m.map); return *this; }
+
+	private:
+		std::unordered_map<K, V> map;
+	};
 }

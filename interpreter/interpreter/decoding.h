@@ -138,24 +138,33 @@ namespace WASM {
 		bool mIsMutable;
 	};
 
-	class DeclaredGlobal {
+	class DeclaredHostGlobal {
 	public:
-		DeclaredGlobal(GlobalType t, Expression c)
-			: mType{ t }, mInitExpression{ std::move(c) } {}
+		DeclaredHostGlobal(GlobalType t)
+			: mType{ t } {}
 
 		const GlobalType& type() const { return mType; }
 		const ValType valType() const { return mType.valType(); }
-		const Expression& initExpression() const { return mInitExpression; }
 
 		void setIndexInTypedStorageArray(u32 idx);
 		std::optional<u32> indexInTypedStorageArray() const { return mIndexInTypedStorageArray; }
 
+	protected:
+		GlobalType mType;
+		std::optional<u32> mIndexInTypedStorageArray;
+	};
+
+	class DeclaredGlobal final : public DeclaredHostGlobal {
+	public:
+		DeclaredGlobal(GlobalType t, Expression c)
+			: DeclaredHostGlobal{ t }, mInitExpression{ std::move(c) } {}
+
+		const Expression& initExpression() const { return mInitExpression; }
 		void print(std::ostream& out) const;
 
 	private:
-		GlobalType mType;
 		Expression mInitExpression;
-		std::optional<u32> mIndexInTypedStorageArray;
+
 	};
 
 	struct ExportItem {
@@ -249,9 +258,10 @@ namespace WASM {
 		virtual ExportType requiredExportType() const = 0;
 		virtual bool isResolved() const = 0;
 		virtual bool tryResolveFromModuleWithIndex(Module&, u32) = 0;
+		virtual bool tryResolveFromModuleWithName(ModuleBase&) = 0;
 		virtual bool isTypeCompatible() const = 0;
 
-	private:
+	protected:
 		std::string mModule;
 		std::string mName;
 	};
@@ -271,6 +281,7 @@ namespace WASM {
 		virtual ExportType requiredExportType() const override;
 		virtual bool isResolved() const override;
 		virtual bool tryResolveFromModuleWithIndex(Module&, u32) override;
+		virtual bool tryResolveFromModuleWithName(ModuleBase&) override;
 		virtual bool isTypeCompatible() const override;
 
 	private:
@@ -290,6 +301,7 @@ namespace WASM {
 		virtual ExportType requiredExportType() const override;
 		virtual bool isResolved() const override;
 		virtual bool tryResolveFromModuleWithIndex(Module&, u32) override;
+		virtual bool tryResolveFromModuleWithName(ModuleBase&) override;
 		virtual bool isTypeCompatible() const override;
 
 	private:
@@ -308,6 +320,7 @@ namespace WASM {
 		virtual ExportType requiredExportType() const override;
 		virtual bool isResolved() const override;
 		virtual bool tryResolveFromModuleWithIndex(Module&, u32) override;
+		virtual bool tryResolveFromModuleWithName(ModuleBase&) override;
 		virtual bool isTypeCompatible() const override;
 
 	private:
@@ -326,9 +339,12 @@ namespace WASM {
 		virtual ExportType requiredExportType() const override;
 		virtual bool isResolved() const override;
 		virtual bool tryResolveFromModuleWithIndex(Module&, u32) override;
+		virtual bool tryResolveFromModuleWithName(ModuleBase&) override;
 		virtual bool isTypeCompatible() const override;
 
 	private:
+		bool resolveFromResolvedGlobal(std::optional<ResolvedGlobal>);
+
 		GlobalType mGlobalType;
 
 		union {

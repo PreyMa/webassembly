@@ -12,7 +12,7 @@ namespace WASM {
 		Nullable(T& x) : ptr{ &x } {};
 
 		template<typename U>
-		Nullable(const Nullable<U>& x) : ptr{ x.ptr } {};
+		Nullable(const Nullable<U>& x) : ptr{ x.pointer() } {};
 
 		template<typename U>
 		static Nullable<T> fromPointer(const std::unique_ptr<U>& ptr) {
@@ -37,6 +37,12 @@ namespace WASM {
 		template<typename U>
 		Nullable operator=(const Nullable<U>& x) { ptr = x.ptr; return *this; };
 
+		template<typename U>
+		bool operator==(const Nullable<U>& x) const { return ptr == x.ptr; }
+
+		template<typename U>
+		bool operator==(const U* x) const { return ptr == x; }
+
 		void clear() { ptr = nullptr; }
 
 	private:
@@ -53,7 +59,7 @@ namespace WASM {
 		NonNull(T& x) : ptr{ &x } {};
 
 		template<typename U>
-		NonNull(const NonNull<U>& x) : ptr{ x.ptr } {};
+		NonNull(const NonNull<U>& x) : ptr{ x.pointer() } {};
 
 		T& value() { return *ptr; }
 		const T& value() const { return *ptr; }
@@ -71,6 +77,12 @@ namespace WASM {
 
 		template<typename U>
 		NonNull operator=(const NonNull<U>& x) { ptr = x.ptr; return *this; };
+
+		template<typename U>
+		bool operator==(const NonNull<U>& x) const { return ptr == x.ptr; }
+
+		template<typename U>
+		bool operator==(const U* x) const { return ptr == x; }
 
 	private:
 		T* ptr;

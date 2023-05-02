@@ -45,5 +45,8 @@ namespace WASM {
 			using Parameters = ParameterPack<Args...>;
 			using Class = C;
 		};
+
+		template<typename TLambda>
+		using MakeLambdaTyper = Detail::LambdaTyper<decltype(&TLambda::operator())>;
 	}
 }

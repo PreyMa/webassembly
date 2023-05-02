@@ -38,13 +38,21 @@ void Interpreter::loadModule(std::string path)
 	ModuleValidator validator{ introspector };
 	validator.validate(parser);
 
-	modules.emplace_back( parser.toModule() );
-	auto& module= modules.back();
+	wasmModules.emplace_back( parser.toModule() );
+	auto& module= wasmModules.back();
+	registerModuleName(module);
+}
 
-	auto result= moduleNameMap.emplace( module.name(), module );
-	if (!result.second) {
-		throw std::runtime_error{ "Module name collision" };
+void WASM::Interpreter::registerHostModule(HostModule hostModule)
+{
+	// See: loadModule()
+	if (hasLinked) {
+		throw std::runtime_error{ "Cannot register (host) module after linking step" };
 	}
+
+	hostModules.emplace_back(std::move(hostModule));
+	auto& module = hostModules.back();
+	registerModuleName(module);
 }
 
 void Interpreter::compileAndLinkModules()
@@ -59,7 +67,7 @@ void Interpreter::compileAndLinkModules()
 		linker.link();
 	}
 
-	for (auto& module : modules) {
+	for (auto& module : wasmModules) {
 		auto introspector = Nullable<Introspector>::fromPointer(attachedIntrospector);
 		module.initTables(introspector);
 		module.initGlobals(introspector);
@@ -73,17 +81,41 @@ void Interpreter::compileAndLinkModules()
 
 void Interpreter::runStartFunctions()
 {
-	for (auto& module : modules) {
+	for (auto& module : wasmModules) {
 		auto startFunction = module.startFunction();
 		if (startFunction.has_value()) {
 			executeFunction(*startFunction, {});
 		}
 	}
+
+	/*auto func = wasmModules.front().functionByIndex(2);
+	assert(func.has_value() && func->asBytecodeFunction().has_value());
+
+	std::array<Value, 1> args{ Value::fromType<i64>(321) };
+	executeFunction(*func, args);*/
 }
 
 void Interpreter::attachIntrospector(std::unique_ptr<Introspector> introspector)
 {
 	attachedIntrospector = std::move(introspector);
+}
+
+void Interpreter::registerModuleName(NonNull<ModuleBase> module)
+{
+	auto result = moduleNameMap.emplace(module->name(), module);
+	if (!result.second) {
+		if (wasmModules.size() && &wasmModules.back() == module) {
+			wasmModules.pop_back();
+		} else if (hostModules.size() && &hostModules.back() == module) {
+			hostModules.pop_back();
+		}
+
+		throw std::runtime_error{ "Module name collision" };
+	}
+
+	if (attachedIntrospector) {
+		attachedIntrospector->onRegisteredModule(*module);
+	}
 }
 
 ValuePack Interpreter::executeFunction(Function& function, std::span<Value> values)
@@ -254,7 +286,7 @@ void Interpreter::dumpStack(std::ostream& out) const
 
 std::optional<Interpreter::FunctionLookup> Interpreter::findFunctionByBytecodePointer(const u8* bytecodePointer) const
 {
-	for (auto& module : modules) {
+	for (auto& module : wasmModules) {
 		auto function = module.findFunctionByBytecodePointer(bytecodePointer);
 		if (function.has_value()) {
 			return FunctionLookup{*function, module};

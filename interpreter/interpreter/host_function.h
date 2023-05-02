@@ -15,6 +15,7 @@ namespace WASM {
 		virtual Nullable<const HostFunctionBase> asHostFunction() const final { return *this; }
 
 		void setIndex(u32 idx) { mIndex = idx; }
+		void setLinkedFunctionType(u32 idx) { mDeduplicatedTypeIndex = idx; }
 		void print(std::ostream&) const;
 
 	protected:
@@ -29,6 +30,8 @@ namespace WASM {
 		template<typename TLambda>
 		HostFunction(TLambda lambda)
 			: HostFunctionBase{ -1, toFunctionType() }, function{ std::move(lambda) } {}
+
+		HostFunction(HostFunction&&) = default;
 
 	protected:
 		FunctionType toFunctionType() const {
@@ -96,7 +99,12 @@ namespace WASM {
 	};
 
 	template<typename TLambda>
-	HostFunction(TLambda) -> HostFunction<Detail::LambdaTyper<decltype(&TLambda::operator())>>;
+	HostFunction(TLambda) -> HostFunction<Detail::MakeLambdaTyper<TLambda>>;
+
+	template<typename TLambda>
+	auto makeUniqueHostFunction(TLambda lambda) {
+		return std::make_unique<HostFunction<Detail::MakeLambdaTyper<TLambda>>>(std::move(lambda));
+	}
 
 	//template<typename TLambda>
 	//HostFunction(TLambda*) -> HostFunction<>;

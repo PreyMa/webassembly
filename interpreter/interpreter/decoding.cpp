@@ -1075,7 +1075,7 @@ void TableType::print(std::ostream& out) const
 	mLimits.print(out);
 }
 
-void DeclaredGlobal::setIndexInTypedStorageArray(u32 idx)
+void DeclaredHostGlobal::setIndexInTypedStorageArray(u32 idx)
 {
 	assert(!mIndexInTypedStorageArray.has_value());
 	mIndexInTypedStorageArray = idx;
@@ -1617,9 +1617,8 @@ bool GlobalImport::isResolved() const
 	return mResolvedGlobal64.has_value();
 }
 
-bool GlobalImport::tryResolveFromModuleWithIndex(Module& module, u32 idx)
+bool WASM::GlobalImport::resolveFromResolvedGlobal(std::optional<ResolvedGlobal> resolvedGlobal)
 {
-	auto resolvedGlobal = module.globalByIndex(idx);
 	if (!resolvedGlobal.has_value()) {
 		return false;
 	}
@@ -1653,6 +1652,16 @@ bool GlobalImport::tryResolveFromModuleWithIndex(Module& module, u32 idx)
 	return true;
 }
 
+bool GlobalImport::tryResolveFromModuleWithIndex(Module& module, u32 idx)
+{
+	return resolveFromResolvedGlobal(module.globalByIndex(idx));	
+}
+
+bool GlobalImport::tryResolveFromModuleWithName(ModuleBase& module)
+{
+	return resolveFromResolvedGlobal(module.exportedGlobalByName(mName));
+}
+
 bool GlobalImport::isTypeCompatible() const
 {
 	// Type checking happens in 'tryResolvefromModuleWithIndex()'
@@ -1684,6 +1693,12 @@ bool FunctionImport::tryResolveFromModuleWithIndex(Module& module, u32 idx)
 	return isResolved();
 }
 
+bool FunctionImport::tryResolveFromModuleWithName(ModuleBase& module)
+{
+	mResolvedFunction = module.exportedFunctionByName(mName);
+	return isResolved();
+}
+
 bool FunctionImport::isTypeCompatible() const
 {
 	// Types are compatible if they are the same.
@@ -1709,6 +1724,12 @@ bool MemoryImport::tryResolveFromModuleWithIndex(Module& module, u32 idx)
 	return isResolved();
 }
 
+bool MemoryImport::tryResolveFromModuleWithName(ModuleBase& module)
+{
+	mResolvedMemory = module.exportedMemoryByName(mName);
+	return isResolved();
+}
+
 bool MemoryImport::isTypeCompatible() const
 {
 	// Types are compatible if the external memory limits match the import declaration.
@@ -1731,6 +1752,12 @@ bool TableImport::isResolved() const
 bool TableImport::tryResolveFromModuleWithIndex(Module& module, u32 idx)
 {
 	mResolvedTable = module.tableByIndex(idx);
+	return isResolved();
+}
+
+bool TableImport::tryResolveFromModuleWithName(ModuleBase& module)
+{
+	mResolvedTable = module.exportedTableByName(mName);
 	return isResolved();
 }
 
