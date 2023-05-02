@@ -768,17 +768,65 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			pushU32(opA >= opB);
 			continue;
 		case BC::F32Equal:
+			opB = popU32();
+			opA = popU32();
+			pushU32(reinterpret_cast<f32&>(opA) == reinterpret_cast<f32&>(opB));
+			continue;
 		case BC::F32NotEqual:
+			opB = popU32();
+			opA = popU32();
+			pushU32(reinterpret_cast<f32&>(opA) != reinterpret_cast<f32&>(opB));
+			continue;
 		case BC::F32Lesser:
+			opB = popU32();
+			opA = popU32();
+			pushU32(reinterpret_cast<f32&>(opA) < reinterpret_cast<f32&>(opB));
+			continue;
 		case BC::F32Greater:
+			opB = popU32();
+			opA = popU32();
+			pushU32(reinterpret_cast<f32&>(opA) > reinterpret_cast<f32&>(opB));
+			continue;
 		case BC::F32LesserEqual:
+			opB = popU32();
+			opA = popU32();
+			pushU32(reinterpret_cast<f32&>(opA) <= reinterpret_cast<f32&>(opB));
+			continue;
 		case BC::F32GreaterEqual:
+			opB = popU32();
+			opA = popU32();
+			pushU32(reinterpret_cast<f32&>(opA) >= reinterpret_cast<f32&>(opB));
+			continue;
 		case BC::F64Equal:
+			opB = popU64();
+			opA = popU64();
+			pushU32(reinterpret_cast<f64&>(opA) == reinterpret_cast<f64&>(opB));
+			continue;
 		case BC::F64NotEqual:
+			opB = popU64();
+			opA = popU64();
+			pushU32(reinterpret_cast<f64&>(opA) != reinterpret_cast<f64&>(opB));
+			continue;
 		case BC::F64Lesser:
+			opB = popU64();
+			opA = popU64();
+			pushU32(reinterpret_cast<f64&>(opA) < reinterpret_cast<f64&>(opB));
+			continue;
 		case BC::F64Greater:
+			opB = popU64();
+			opA = popU64();
+			pushU32(reinterpret_cast<f64&>(opA) > reinterpret_cast<f64&>(opB));
+			continue;
 		case BC::F64LesserEqual:
+			opB = popU64();
+			opA = popU64();
+			pushU32(reinterpret_cast<f64&>(opA) <= reinterpret_cast<f64&>(opB));
+			continue;
 		case BC::F64GreaterEqual:
+			opB = popU64();
+			opA = popU64();
+			pushU32(reinterpret_cast<f64&>(opA) >= reinterpret_cast<f64&>(opB));
+			continue;
 		case BC::I32CountLeadingZeros:
 		case BC::I32CountTrailingZeros:
 		case BC::I32CountOnes:

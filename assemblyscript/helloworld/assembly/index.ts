@@ -67,7 +67,22 @@ export function doLocal(x: i64): i64 {
   return y;
 }*/
 
-import { printFloat, vecSum } from "./env";
+import { printInt, vecSum } from "./env";
 
-const sum= vecSum(1.0, 2.0, 3.0);
-printFloat(sum);
+function printBool(x: boolean): void { printInt( x ? 1 : 0 ); }
+
+// const sum= vecSum(1.0, 2.0, 3.0);
+// printFloat(sum);
+
+const x: f64 = 3.14;
+const y: f64 = 7.65;
+const z: f64 = 0.52;
+
+printBool( x == x );
+printBool( x != x );
+printBool( x == y );
+printBool( x != y );
+printBool( x < x );
+printBool( x < y );
+printBool( x > x );
+printBool( x > y );
