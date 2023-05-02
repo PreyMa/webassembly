@@ -920,7 +920,13 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 		case BC::F64ConvertI32U:
 		case BC::F64ConvertI64S:
 		case BC::F64ConvertI64U:
-		case BC::F64PromoteF32:
+			break;
+		case BC::F64PromoteF32: {
+			u32 x= popU32();
+			f64 y = *(f32*)&x;
+			pushU64(*(u64*)&y);
+			continue;
+		}
 		case BC::I32Extend8s:
 		case BC::I32Extend16s:
 		case BC::I64Extend8s:

@@ -67,6 +67,7 @@ export function doLocal(x: i64): i64 {
   return y;
 }*/
 
-import { printInt } from "./env";
+import { printFloat, vecSum } from "./env";
 
-printInt(32);
+const sum= vecSum(1.0, 2.0, 3.0);
+printFloat(sum);

@@ -15,11 +15,13 @@ int main() {
 		auto logger = std::make_unique<WASM::ConsoleLogger>( std::cout );
 		interpreter.attachIntrospector(std::move(logger));
 
-		using WASM::u32, WASM::i64;
+		using WASM::u32, WASM::i64, WASM::f32, WASM::f64;
 		WASM::HostModuleBuilder envModule{ "env" };
 		envModule
-			.defineFunction("abort", [&](u32, u32, u32, u32) { std::cout << "Abort called"; })
-			.defineFunction("printInt", [&](i64 val) { std::cout << "printInt: " << val; });
+			.defineFunction("abort", [&](u32, u32, u32, u32) { std::cout << "Abort called\n"; })
+			.defineFunction("printInt", [&](i64 val) { std::cout << "printInt: " << val << std::endl; })
+			.defineFunction("printFloat", [&](f64 val) { std::cout << "printFloat: " << val << std::endl; })
+			.defineFunction("vecSum", [&](f32 a, f32 b, f32 c) { return a + b + c; });
 
 		interpreter.loadModule("C:/Users/Matthias/Documents/Uni/ABM/webassembly/webassembly/assemblyscript/helloworld/build/debug.wasm");
 		//interpreter.loadModule("C:/Users/Matthias/Documents/Uni/ABM/webassembly/webassembly/assemblyscript/ying/build/ying.debug.wasm");
