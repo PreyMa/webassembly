@@ -1,8 +1,7 @@
 #include <cassert>
 #include <iostream>
 
-#include "module.h"
-#include "instruction.h"
+#include "interpreter.h"
 #include "introspection.h"
 #include "error.h"
 
@@ -965,6 +964,20 @@ u32 FunctionType::resultStackSectionSizeInBytes() const
 	requiredResultStackBytes = numBytesResults;
 
 	return numBytesResults;
+}
+
+bool WASM::FunctionType::takesValuesAsParameters(std::span<Value> values) const
+{
+	auto params = parameters();
+	if (params.size() != values.size()) {
+		return false;
+	}
+
+	for (u32 i = 0; i != params.size(); i++) {
+		if (params[i] != values[i].type()) {
+			return false;
+		}
+	}
 }
 
 void FunctionType::print(std::ostream& out) const

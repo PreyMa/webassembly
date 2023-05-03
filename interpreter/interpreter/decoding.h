@@ -51,6 +51,7 @@ namespace WASM {
 		bool takesVoidReturnsVoid() const;
 		u32 parameterStackSectionSizeInBytes() const;
 		u32 resultStackSectionSizeInBytes() const;
+		bool takesValuesAsParameters(std::span<Value>) const;
 		void print(std::ostream&) const;
 
 		bool operator==(const FunctionType&) const;

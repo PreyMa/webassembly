@@ -41,6 +41,8 @@ namespace WASM {
 	struct BlockTypeIndex;
 	struct BlockTypeResults;
 
+	class Value;
+	class ValuePack;
 	class Interpreter;
 
 	class Function;

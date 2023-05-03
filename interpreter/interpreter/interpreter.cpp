@@ -124,6 +124,10 @@ ValuePack Interpreter::executeFunction(Function& function, std::span<Value> valu
 
 	auto bytecodeFunction = function.asBytecodeFunction();
 	if (bytecodeFunction.has_value()) {
+		if(!bytecodeFunction->functionType().takesValuesAsParameters(values)) {
+			throw std::runtime_error("Invalid arguments provided to bytecode function");
+		}
+
 		auto pack= runInterpreterLoop(*bytecodeFunction, values);
 
 		pack.print(std::cout);

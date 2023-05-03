@@ -8,20 +8,21 @@ namespace WASM {
 	class Value {
 	public:
 
-		Value(ValType t, u64 data) : type{ t }, u64Data{ data } {}
+		Value(ValType t, u64 data) : mType{ t }, u64Data{ data } {}
 
 		template<typename T>
 		static Value fromType(T val) {
 			return { ValType::fromType<T>(), reinterpret_cast<u64&>(val) };
 		}
 
-		u32 sizeInBytes() const { return type.sizeInBytes(); }
+		auto type() const { return mType; }
+		u32 sizeInBytes() const { return mType.sizeInBytes(); }
 
 		u32 asU32() const { return u32Data; }
 		u32 asU64() const { return u64Data; }
 
 	private:
-		ValType type;
+		ValType mType;
 		union {
 			u32 u32Data;
 			u64 u64Data;
