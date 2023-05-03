@@ -69,12 +69,12 @@ export function doLocal(x: i64): i64 {
 
 import { printInt, vecSum } from "./env";
 
-function printBool(x: boolean): void { printInt( x ? 1 : 0 ); }
+//function printBool(x: boolean): void { printInt( x ? 1 : 0 ); }
 
 // const sum= vecSum(1.0, 2.0, 3.0);
 // printFloat(sum);
 
-const x: f64 = 3.14;
+/*const x: f64 = 3.14;
 const y: f64 = 7.65;
 const z: f64 = 0.52;
 
@@ -85,4 +85,21 @@ printBool( x != y );
 printBool( x < x );
 printBool( x < y );
 printBool( x > x );
-printBool( x > y );
+printBool( x > y );*/
+
+export function switcher(x: i32): i32 {
+  switch(x) {
+    case 1: return 31;
+    case 2: return 62;
+    case 3: return 93;
+    case 4: return 124;
+    case 5: return 155;
+    case 6: return 186;
+    case 7: return 217;
+    case 8: return 248;
+    case 9: return 279;
+    case 10: return 310;
+    
+    default: return -1;
+  }
+}

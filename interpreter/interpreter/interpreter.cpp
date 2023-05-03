@@ -29,17 +29,17 @@ void Interpreter::loadModule(std::string path)
 		throw std::runtime_error{ "Cannot load module after linking step" };
 	}
 
-	auto introspector= Nullable<Introspector>::fromPointer(attachedIntrospector);
+	auto introspector = Nullable<Introspector>::fromPointer(attachedIntrospector);
 
-	auto buffer= Buffer::fromFile(path);
+	auto buffer = Buffer::fromFile(path);
 	ModuleParser parser{ introspector };
 	parser.parse(std::move(buffer), std::move(path));
 
 	ModuleValidator validator{ introspector };
 	validator.validate(parser);
 
-	wasmModules.emplace_back( parser.toModule() );
-	auto& module= wasmModules.back();
+	wasmModules.emplace_back(parser.toModule());
+	auto& module = wasmModules.back();
 	registerModuleName(module);
 }
 
@@ -88,10 +88,10 @@ void Interpreter::runStartFunctions()
 		}
 	}
 
-	/*auto func = wasmModules.front().functionByIndex(2);
+	/*auto func = wasmModules.front().functionByIndex(0);
 	assert(func.has_value() && func->asBytecodeFunction().has_value());
 
-	std::array<Value, 1> args{ Value::fromType<i64>(321) };
+	std::array<Value, 1> args{ Value::fromType<i32>(4) };
 	executeFunction(*func, args);*/
 }
 
@@ -106,7 +106,8 @@ void Interpreter::registerModuleName(NonNull<ModuleBase> module)
 	if (!result.second) {
 		if (wasmModules.size() && &wasmModules.back() == module) {
 			wasmModules.pop_back();
-		} else if (hostModules.size() && &hostModules.back() == module) {
+		}
+		else if (hostModules.size() && &hostModules.back() == module) {
 			hostModules.pop_back();
 		}
 
@@ -448,7 +449,13 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			continue;
 		}
 		case BC::JumpTable:
-			break;
+			opA = loadOperandU32();
+			opB = popU32();
+			if (opB > opA) {
+				opB = opA;
+			}
+			instructionPointer += reinterpret_cast<const i32*>(instructionPointer)[opB] - 4;
+			continue;
 		case BC::ReturnFew: {
 			auto numSlotsToReturn = *(instructionPointer++);
 			auto currentStackPointer = stackPointer;
