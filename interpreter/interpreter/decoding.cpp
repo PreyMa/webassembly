@@ -1097,7 +1097,7 @@ bool Export::isValid(u32 numFunctions, u32 numTables, u32 numMemories, u32 numGl
 	switch (mExportType) {
 	case ExportType::FunctionIndex: return mIndex < numFunctions;
 	case ExportType::TableIndex: return mIndex < numTables;
-	case ExportType::MemoryIndex: return mIndex < numTables;
+	case ExportType::MemoryIndex: return mIndex < numMemories;
 	case ExportType::GlobalIndex: return mIndex < numGlobals;
 	default:
 		assert(false);
