@@ -978,6 +978,8 @@ bool WASM::FunctionType::takesValuesAsParameters(std::span<Value> values) const
 			return false;
 		}
 	}
+
+	return true;
 }
 
 void FunctionType::print(std::ostream& out) const
