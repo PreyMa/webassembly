@@ -5,6 +5,8 @@ namespace WASM {
 	class BufferSlice;
 	class BufferIterator;
 
+	template<typename, int> struct TypedIndex;
+
 	struct ExportItem;
 	struct CompressedLocalTypes;
 	class Expression;

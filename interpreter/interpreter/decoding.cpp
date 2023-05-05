@@ -37,10 +37,10 @@ Module ModuleParser::toModule()
 	bytecodeFunctions.reserve(functions.size());
 
 	for (u32 i = 0; i != functions.size(); i++) {
-		auto functionIdx = i + importedFunctions.size();
+		ModuleFunctionIndex functionIdx{ (u32)(i + importedFunctions.size()) };
 		auto typeIdx = functions[i];
 		assert(typeIdx < functionTypes.size());
-		auto& funcType = functionTypes[typeIdx];
+		auto& funcType = functionTypes[typeIdx.value];
 		auto& funcCode = functionCodes[i];
 		bytecodeFunctions.emplace_back(functionIdx, typeIdx, funcType, std::move(funcCode));
 	}
@@ -50,7 +50,7 @@ Module ModuleParser::toModule()
 	functionTables.reserve(tableTypes.size());
 
 	for (u32 i = 0; i != tableTypes.size(); i++) {
-		auto tableIdx = i + importedTableTypes.size();
+		ModuleTableIndex tableIdx{ (u32)(i + importedTableTypes.size()) };
 		auto& tableType = tableTypes[i];
 		functionTables.emplace_back(tableIdx, tableType);
 	}
@@ -58,7 +58,7 @@ Module ModuleParser::toModule()
 	// Create memory instance if one is defined
 	std::optional<Memory> memoryInstance;
 	if (!memoryTypes.empty()) {
-		memoryInstance.emplace(0, memoryTypes[0].limits());
+		memoryInstance.emplace(ModuleMemoryIndex{ 0 }, memoryTypes[0].limits());
 	}
 
 	// Count the number of 32bit and 64bit globals, assign relative indices
@@ -68,10 +68,12 @@ Module ModuleParser::toModule()
 	for (auto& global : globals) {
 		auto size = global.valType().sizeInBytes();
 		if (size == 4) {
-			global.setIndexInTypedStorageArray(num32BitGlobals++);
+			ModuleGlobalTypedArrayIndex idx{ num32BitGlobals++ };
+			global.setIndexInTypedStorageArray(idx);
 		}
 		else if (size == 8) {
-			global.setIndexInTypedStorageArray(num64BitGlobals++);
+			ModuleGlobalTypedArrayIndex idx{ num64BitGlobals++ };
+			global.setIndexInTypedStorageArray(idx);
 		}
 		else {
 			throw ValidationError{ path, "Only globals with 32bits and 64bits are supported" };
@@ -300,7 +302,7 @@ void ModuleParser::parseFunctionSection()
 	auto numFunctions = nextU32();
 	functions.reserve(functions.size() + numFunctions);
 	for (u32 i = 0; i != numFunctions; i++) {
-		auto typeIdx = nextU32();
+		ModuleTypeIndex typeIdx{ nextU32() };
 		functions.push_back( typeIdx );
 	}
 
@@ -384,7 +386,7 @@ void ModuleParser::parseStartSection()
 	// module's start function
 	// https://webassembly.github.io/spec/core/binary/modules.html#start-section
 
-	auto idx = nextU32();
+	ModuleFunctionIndex idx{ nextU32() };
 	startFunctionIndex.emplace(idx);
 
 	if (introspector.has_value()) {
@@ -445,8 +447,8 @@ void ModuleParser::parseImportSection()
 		// Parse each import type
 		switch (importType) {
 		case ImportType::FunctionImport: {
-			auto funcIdx = nextU32();
-			importedFunctions.emplace_back(FunctionImport{ std::move(moduleName), std::move(itemName), funcIdx });
+			ModuleTypeIndex funcTypeIdx{ nextU32() };
+			importedFunctions.emplace_back(FunctionImport{ std::move(moduleName), std::move(itemName), funcTypeIdx });
 			break;
 		}
 		case ImportType::TableImport: {
@@ -703,14 +705,15 @@ std::vector<Expression> ModuleParser::parseInitExpressionVector()
 	return exps;
 }
 
-std::vector<u32> ModuleParser::parseU32Vector()
+std::vector<ModuleFunctionIndex> ModuleParser::parseU32Vector()
 {
 	auto numExp = nextU32();
-	std::vector<u32> ints;
+	std::vector<ModuleFunctionIndex> ints;
 	ints.reserve(numExp);
 
 	for (u32 i = 0; i != numExp; i++) {
-		ints.emplace_back(nextU32());
+		ModuleFunctionIndex funcIdx{ nextU32() };
+		ints.emplace_back(funcIdx);
 	}
 
 	return ints;
@@ -729,7 +732,7 @@ Export ModuleParser::parseExport()
 	
 	auto name = parseNameString();
 	auto exportType = ExportType::fromInt(nextU8());
-	auto index = nextU32();
+	ModuleExportIndex index{ nextU32() };
 
 	return { std::move(name), exportType, index };
 }
@@ -776,7 +779,7 @@ Element ModuleParser::parseElement()
 	{
 		auto tableOffset = parseInitExpression();
 		auto functions = parseU32Vector();
-		return {ElementMode::Active, ValType::FuncRef, 0, tableOffset, std::move(functions)};
+		return { ElementMode::Active, ValType::FuncRef, ModuleTableIndex{ 0 }, tableOffset, std::move(functions) };
 	}
 	case 1:
 	{
@@ -786,7 +789,7 @@ Element ModuleParser::parseElement()
 	}
 	case 2:
 	{
-		auto tableIdx = nextU32();
+		ModuleTableIndex tableIdx{ nextU32() };
 		auto tableOffset = parseInitExpression();
 		parseElementKind();
 		auto functions = parseU32Vector();
@@ -802,7 +805,7 @@ Element ModuleParser::parseElement()
 	{
 		auto tableOffset = parseInitExpression();
 		auto exprs = parseInitExpressionVector();
-		return {ElementMode::Active, ValType::FuncRef, 0, tableOffset, std::move(exprs)};
+		return {ElementMode::Active, ValType::FuncRef, ModuleTableIndex{ 0 }, tableOffset, std::move(exprs)};
 	}
 	case 5:
 	{
@@ -812,7 +815,7 @@ Element ModuleParser::parseElement()
 	}
 	case 6:
 	{
-		auto tableIdx = nextU32();
+		ModuleTableIndex tableIdx{ nextU32() };
 		auto tableOffset = parseInitExpression();
 		auto refType = parseReferenceType();
 		auto exprs = parseInitExpressionVector();
@@ -1090,7 +1093,7 @@ void TableType::print(std::ostream& out) const
 	mLimits.print(out);
 }
 
-void DeclaredHostGlobal::setIndexInTypedStorageArray(u32 idx)
+void DeclaredHostGlobal::setIndexInTypedStorageArray(ModuleGlobalTypedArrayIndex idx)
 {
 	assert(!mIndexInTypedStorageArray.has_value());
 	mIndexInTypedStorageArray = idx;
@@ -1154,7 +1157,7 @@ void Element::print(std::ostream& out) const
 	}
 }
 
-LinkedElement Element::decodeAndLink(u32 index, Module& module)
+LinkedElement Element::decodeAndLink(ModuleElementIndex index, Module& module)
 {
 	u32 tableOffset = mTablePosition.has_value() ? mTablePosition->tableOffset.constantI32() : 0;
 	if (mMode == ElementMode::Passive) {
@@ -1162,7 +1165,7 @@ LinkedElement Element::decodeAndLink(u32 index, Module& module)
 	}
 
 	std::vector<Nullable<Function>> functionPointers;
-	auto appendFunction = [&](u32 functionIdx) {
+	auto appendFunction = [&](ModuleFunctionIndex functionIdx) {
 		auto function= module.functionByIndex(functionIdx);
 		assert(function.has_value()); // FIXME: Throw instead
 		functionPointers.emplace_back(function);
@@ -1234,7 +1237,7 @@ i32 Expression::constantI32() const
 	return mInstructions.front().asI32Constant();
 }
 
-std::optional<u32> Expression::constantFuncRefAsIndex() const
+std::optional<ModuleFunctionIndex> Expression::constantFuncRefAsIndex() const
 {
 	assert(mInstructions.size() > 0);
 	return mInstructions.front().asReferenceIndex();
@@ -1290,7 +1293,7 @@ void ModuleValidator::validate(const ParsingState& parser)
 	}
 
 	for (u32 i = 0; i != s().functions.size(); i++) {
-		validateFunction(i);
+		validateFunction(LocalFunctionIndex{ i });
 	}
 
 	if (s().startFunctionIndex.has_value()) {
@@ -1334,11 +1337,11 @@ void ModuleValidator::validate(const ParsingState& parser)
 	parsingState = nullptr;
 }
 
-const FunctionType& ModuleValidator::functionTypeByIndex(u32 funcIdx)
+const FunctionType& ModuleValidator::functionTypeByIndex(ModuleFunctionIndex funcIdx)
 {
-	u32 typeIdx;
+	ModuleTypeIndex typeIdx{ 0 };
 	if (funcIdx < s().importedFunctions.size()) {
-		typeIdx= s().importedFunctions[funcIdx].moduleBasedFunctionTypeIndex();
+		typeIdx= s().importedFunctions[funcIdx.value].moduleTypeIndex();
 	}
 	else {
 		funcIdx -= s().importedFunctions.size();
@@ -1346,16 +1349,16 @@ const FunctionType& ModuleValidator::functionTypeByIndex(u32 funcIdx)
 			throwValidationError("Invalid function index");
 		}
 
-		typeIdx = s().functions[funcIdx];
+		typeIdx = s().functions[funcIdx.value];
 	}
 	
 	if (typeIdx > s().functionTypes.size()) {
 		throwValidationError("Function references invalid type index");
 	}
-	return s().functionTypes[typeIdx];
+	return s().functionTypes[typeIdx.value];
 }
 
-void ModuleValidator::validateFunction(u32 funcNum)
+void ModuleValidator::validateFunction(LocalFunctionIndex funcNum)
 {
 	// Validating a function checks whether it references a valid
 	// function type. Further its expression has to be checked, however
@@ -1363,16 +1366,17 @@ void ModuleValidator::validateFunction(u32 funcNum)
 	// https://webassembly.github.io/spec/core/valid/modules.html#functions
 	// https://webassembly.github.io/spec/core/valid/types.html#function-types
 
-	auto typeIdx = s().functions[funcNum];
+	auto typeIdx = s().functions[funcNum.value];
 	if (typeIdx > s().functionTypes.size()) {
 		throwValidationError("Function references invalid type index");
 	}
 	
 	// Validation of the actual function code happens in the compiler
 
-	auto& type = s().functionTypes[typeIdx];
+	auto& type = s().functionTypes[typeIdx.value];
 	if (introspector.has_value()) {
-		introspector->onValidatingFunction(s().importedFunctions.size()+ funcNum, type);
+		ModuleFunctionIndex funcIdx{ (u32)(funcNum.value + s().importedFunctions.size()) };
+		introspector->onValidatingFunction(funcIdx, type);
 	}
 }
 
@@ -1436,7 +1440,7 @@ void ModuleValidator::validateExport(const Export& exportItem)
 	}
 }
 
-void ModuleValidator::validateStartFunction(u32 idx)
+void ModuleValidator::validateStartFunction(ModuleFunctionIndex idx)
 {
 	// To validate the start function it has to be checked whether the function index references
 	// a valid function. Further the function type has to be [] -> [] (no parameters, no return
@@ -1498,7 +1502,7 @@ void ModuleValidator::validateElementSegment(const Element& elem)
 			throwValidationError("Element segment references invalid table index");
 		}
 
-		auto& table = s().tableTypes[tableIdx];
+		auto& table = s().tableTypes[tableIdx.value];
 		if (table.valType() != elem.valType()) {
 			throwValidationError("Element segment type missmatch with reference table");
 		}
@@ -1667,9 +1671,10 @@ bool WASM::GlobalImport::resolveFromResolvedGlobal(std::optional<ResolvedGlobal>
 	return true;
 }
 
-bool GlobalImport::tryResolveFromModuleWithIndex(Module& module, u32 idx)
+bool GlobalImport::tryResolveFromModuleWithIndex(Module& module, ModuleExportIndex idx)
 {
-	return resolveFromResolvedGlobal(module.globalByIndex(idx));	
+	ModuleGlobalIndex globalIdx{ idx.value };
+	return resolveFromResolvedGlobal(module.globalByIndex(globalIdx));	
 }
 
 bool GlobalImport::tryResolveFromModuleWithName(ModuleBase& module)
@@ -1683,13 +1688,13 @@ bool GlobalImport::isTypeCompatible() const
 	return isResolved();
 }
 
-void FunctionImport::deduplicatedFunctionTypeIndex(u32 idx)
+void FunctionImport::interpreterTypeIndex(InterpreterTypeIndex idx)
 {
-	if (hasDeduplicatedFunctionTypeIndex()) {
+	if (hasInterpreterTypeIndex()) {
 		throw std::runtime_error{"Function import already has a deduplicated function type index"};
 	}
 
-	mDeduplicatedFunctionTypeIndex = idx;
+	mInterpreterTypeIndex = idx;
 }
 
 ExportType FunctionImport::requiredExportType() const
@@ -1702,9 +1707,10 @@ bool FunctionImport::isResolved() const
 	return mResolvedFunction.has_value();
 }
 
-bool FunctionImport::tryResolveFromModuleWithIndex(Module& module, u32 idx)
+bool FunctionImport::tryResolveFromModuleWithIndex(Module& module, ModuleExportIndex idx)
 {
-	mResolvedFunction = module.functionByIndex(idx);
+	ModuleFunctionIndex funcIdx{ idx.value };
+	mResolvedFunction = module.functionByIndex(funcIdx);
 	return isResolved();
 }
 
@@ -1720,7 +1726,7 @@ bool FunctionImport::isTypeCompatible() const
 	// https://webassembly.github.io/spec/core/valid/types.html#functions
 
 	return isResolved()
-		&& mResolvedFunction->deduplicatedTypeIndex() == mDeduplicatedFunctionTypeIndex;
+		&& mResolvedFunction->interpreterTypeIndex() == *mInterpreterTypeIndex;
 }
 
 ExportType MemoryImport::requiredExportType() const
@@ -1733,9 +1739,10 @@ bool MemoryImport::isResolved() const
 	return mResolvedMemory.has_value();
 }
 
-bool MemoryImport::tryResolveFromModuleWithIndex(Module& module, u32 idx)
+bool MemoryImport::tryResolveFromModuleWithIndex(Module& module, ModuleExportIndex idx)
 {
-	mResolvedMemory = module.memoryByIndex(idx);
+	ModuleMemoryIndex memIdx{ idx.value };
+	mResolvedMemory = module.memoryByIndex(memIdx);
 	return isResolved();
 }
 
@@ -1764,9 +1771,10 @@ bool TableImport::isResolved() const
 	return mResolvedTable.has_value();
 }
 
-bool TableImport::tryResolveFromModuleWithIndex(Module& module, u32 idx)
+bool TableImport::tryResolveFromModuleWithIndex(Module& module, ModuleExportIndex idx)
 {
-	mResolvedTable = module.tableByIndex(idx);
+	ModuleTableIndex tableIdx{ idx.value };
+	mResolvedTable = module.tableByIndex(tableIdx);
 	return isResolved();
 }
 
@@ -1795,4 +1803,28 @@ std::string Imported::scopedName() const
 	itemName += "::";
 	itemName += mName;
 	return itemName;
+}
+
+ModuleFunctionIndex WASM::ExportItem::asFunctionIndex() const
+{
+	assert(mExportType == ExportType::FunctionIndex);
+	return ModuleFunctionIndex{ mIndex.value };
+}
+
+ModuleGlobalIndex WASM::ExportItem::asGlobalIndex() const
+{
+	assert(mExportType == ExportType::GlobalIndex);
+	return ModuleGlobalIndex{ mIndex.value };
+}
+
+ModuleMemoryIndex WASM::ExportItem::asMemoryIndex() const
+{
+	assert(mExportType == ExportType::MemoryIndex);
+	return ModuleMemoryIndex{ mIndex.value };
+}
+
+ModuleTableIndex WASM::ExportItem::asTableIndex() const
+{
+	assert(mExportType == ExportType::TableIndex);
+	return ModuleTableIndex{ mIndex.value };
 }

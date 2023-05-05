@@ -5,6 +5,7 @@
 #include<string>
 
 #include "util.h"
+#include "indices.h"
 
 namespace WASM {
 
@@ -60,14 +61,14 @@ namespace WASM {
 		CompileError(std::string mod, std::string m)
 			: Error{ std::move(m) }, moduleName{ std::move(mod) } {}
 
-		CompileError(std::string mod, u32 fi, std::string m)
+		CompileError(std::string mod, ModuleFunctionIndex fi, std::string m)
 			: Error{ std::move(m) }, moduleName{ std::move(mod) }, functionIndex{ fi } {}
 
 		virtual void print(std::ostream& o) const override;
 
 	private:
 		std::string moduleName;
-		std::optional<u32> functionIndex;
+		std::optional<ModuleFunctionIndex> functionIndex;
 	};
 }
 

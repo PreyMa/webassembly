@@ -30,7 +30,7 @@ namespace WASM {
 		const auto& operator[](sizeType idx) const { return mInstructions[idx]; }
 
 		i32 constantI32() const;
-		std::optional<u32> constantFuncRefAsIndex() const;
+		std::optional<ModuleFunctionIndex> constantFuncRefAsIndex() const;
 		u64 constantUntypedValue(Module&) const;
 
 	private:
@@ -147,12 +147,12 @@ namespace WASM {
 		const GlobalType& type() const { return mType; }
 		const ValType valType() const { return mType.valType(); }
 
-		void setIndexInTypedStorageArray(u32 idx);
-		std::optional<u32> indexInTypedStorageArray() const { return mIndexInTypedStorageArray; }
+		void setIndexInTypedStorageArray(ModuleGlobalTypedArrayIndex idx);
+		auto indexInTypedStorageArray() const { return mIndexInTypedStorageArray; }
 
 	protected:
 		GlobalType mType;
-		std::optional<u32> mIndexInTypedStorageArray;
+		std::optional<ModuleGlobalTypedArrayIndex> mIndexInTypedStorageArray;
 	};
 
 	class DeclaredGlobal final : public DeclaredHostGlobal {
@@ -170,12 +170,17 @@ namespace WASM {
 
 	struct ExportItem {
 		ExportType mExportType;
-		u32 mIndex;
+		ModuleExportIndex mIndex;
+
+		ModuleFunctionIndex asFunctionIndex() const;
+		ModuleGlobalIndex asGlobalIndex() const;
+		ModuleMemoryIndex asMemoryIndex() const;
+		ModuleTableIndex asTableIndex() const;
 	};
 
 	class Export final : private ExportItem {
 	public:
-		Export(std::string n, ExportType e, u32 i)
+		Export(std::string n, ExportType e, ModuleExportIndex i)
 			: ExportItem{ e, i }, mName { std::move(n) } {}
 
 		const std::string& name() const { return mName; }
@@ -193,24 +198,24 @@ namespace WASM {
 	class Element {
 	public:
 		struct TablePosition {
-			u32 tableIndex;
+			ModuleTableIndex tableIndex;
 			Expression tableOffset;
 		};
 
-		Element( ElementMode m, ValType r, std::vector<u32> f )
+		Element( ElementMode m, ValType r, std::vector<ModuleFunctionIndex> f )
 			: mMode{ m }, refType{r}, mInitExpressions{ std::move(f) } {}
 
-		Element(ElementMode m, ValType r, u32 ti, Expression to, std::vector<u32> f)
+		Element(ElementMode m, ValType r, ModuleTableIndex ti, Expression to, std::vector<ModuleFunctionIndex> f)
 			: mMode{ m }, refType{ r }, mTablePosition{ {ti, std::move(to)} }, mInitExpressions{ std::move(f) } {}
 
 		Element(ElementMode m, ValType r, std::vector<Expression> e)
 			: mMode{ m }, refType{ r }, mInitExpressions{ std::move(e) } {}
 
-		Element(ElementMode m, ValType r, u32 ti, Expression to, std::vector<Expression> e)
+		Element(ElementMode m, ValType r, ModuleTableIndex ti, Expression to, std::vector<Expression> e)
 			: mMode{ m }, refType{ r }, mTablePosition{ {ti, std::move(to)} }, mInitExpressions{ std::move(e) } {}
 
-		u32 tableIndex() const {
-			return mTablePosition.has_value() ? mTablePosition->tableIndex : 0;
+		ModuleTableIndex tableIndex() const {
+			return mTablePosition.has_value() ? mTablePosition->tableIndex : ModuleTableIndex{ 0 };
 		}
 
 		ElementMode mode() const { return mMode; }
@@ -219,13 +224,13 @@ namespace WASM {
 		Nullable<const std::vector<Expression>> initExpressions() const;
 
 		void print(std::ostream& out) const;
-		LinkedElement decodeAndLink(u32, Module&);
+		LinkedElement decodeAndLink(ModuleElementIndex, Module&);
 
 	private:
 		ElementMode mMode;
 		ValType refType;
 		std::optional<TablePosition> mTablePosition;
-		std::variant<std::vector<u32>, std::vector<Expression>> mInitExpressions;
+		std::variant<std::vector<ModuleFunctionIndex>, std::vector<Expression>> mInitExpressions;
 	};
 
 	class FunctionCode {
@@ -258,7 +263,7 @@ namespace WASM {
 
 		virtual ExportType requiredExportType() const = 0;
 		virtual bool isResolved() const = 0;
-		virtual bool tryResolveFromModuleWithIndex(Module&, u32) = 0;
+		virtual bool tryResolveFromModuleWithIndex(Module&, ModuleExportIndex) = 0;
 		virtual bool tryResolveFromModuleWithName(ModuleBase&) = 0;
 		virtual bool isTypeCompatible() const = 0;
 
@@ -269,25 +274,25 @@ namespace WASM {
 
 	class FunctionImport final : public Imported {
 	public:
-		FunctionImport(std::string m, std::string n, u32 idx)
-			: Imported{ std::move(m), std::move(n) }, mModuleBasedFunctionTypeIndex{ idx } {}
+		FunctionImport(std::string m, std::string n, ModuleTypeIndex idx)
+			: Imported{ std::move(m), std::move(n) }, mModuleTypeIndex{ idx } {}
 
-		auto& moduleBasedFunctionTypeIndex() const { return mModuleBasedFunctionTypeIndex; }
-		auto& deduplicatedFunctionTypeIndex() const { return *mDeduplicatedFunctionTypeIndex; }
+		auto& moduleTypeIndex() const { return mModuleTypeIndex; }
+		auto& interpreterTypeIndex() const { return *mInterpreterTypeIndex; }
 		auto& resolvedFunction() const { return mResolvedFunction; }
 
-		bool hasDeduplicatedFunctionTypeIndex() const { return mDeduplicatedFunctionTypeIndex.has_value(); }
-		void deduplicatedFunctionTypeIndex(u32 idx);
+		bool hasInterpreterTypeIndex() const { return mInterpreterTypeIndex.has_value(); }
+		void interpreterTypeIndex(InterpreterTypeIndex idx);
 
 		virtual ExportType requiredExportType() const override;
 		virtual bool isResolved() const override;
-		virtual bool tryResolveFromModuleWithIndex(Module&, u32) override;
+		virtual bool tryResolveFromModuleWithIndex(Module&, ModuleExportIndex) override;
 		virtual bool tryResolveFromModuleWithName(ModuleBase&) override;
 		virtual bool isTypeCompatible() const override;
 
 	private:
-		u32 mModuleBasedFunctionTypeIndex;
-		std::optional<u32> mDeduplicatedFunctionTypeIndex;
+		ModuleTypeIndex mModuleTypeIndex;
+		std::optional<InterpreterTypeIndex> mInterpreterTypeIndex;
 		Nullable<Function> mResolvedFunction;
 	};
 
@@ -301,7 +306,7 @@ namespace WASM {
 
 		virtual ExportType requiredExportType() const override;
 		virtual bool isResolved() const override;
-		virtual bool tryResolveFromModuleWithIndex(Module&, u32) override;
+		virtual bool tryResolveFromModuleWithIndex(Module&, ModuleExportIndex) override;
 		virtual bool tryResolveFromModuleWithName(ModuleBase&) override;
 		virtual bool isTypeCompatible() const override;
 
@@ -320,7 +325,7 @@ namespace WASM {
 
 		virtual ExportType requiredExportType() const override;
 		virtual bool isResolved() const override;
-		virtual bool tryResolveFromModuleWithIndex(Module&, u32) override;
+		virtual bool tryResolveFromModuleWithIndex(Module&, ModuleExportIndex) override;
 		virtual bool tryResolveFromModuleWithName(ModuleBase&) override;
 		virtual bool isTypeCompatible() const override;
 
@@ -339,7 +344,7 @@ namespace WASM {
 		Nullable<const GlobalBase> getBase() const;
 		virtual ExportType requiredExportType() const override;
 		virtual bool isResolved() const override;
-		virtual bool tryResolveFromModuleWithIndex(Module&, u32) override;
+		virtual bool tryResolveFromModuleWithIndex(Module&, ModuleExportIndex) override;
 		virtual bool tryResolveFromModuleWithName(ModuleBase&) override;
 		virtual bool isTypeCompatible() const override;
 
@@ -369,12 +374,12 @@ namespace WASM {
 		BufferIterator it;
 		std::unordered_map<std::string, BufferSlice> customSections;
 		std::vector<FunctionType> functionTypes;
-		std::vector<u32> functions;
+		std::vector<ModuleTypeIndex> functions;
 		std::vector<TableType> tableTypes;
 		std::vector<MemoryType> memoryTypes;
 		std::vector<DeclaredGlobal> globals;
 		std::vector<Export> exports;
-		std::optional<u32> startFunctionIndex;
+		std::optional<ModuleFunctionIndex> startFunctionIndex;
 		std::vector<Element> elements;
 		std::vector<FunctionCode> functionCodes;
 
@@ -443,7 +448,7 @@ namespace WASM {
 		FunctionCode parseFunctionCode();
 
 		std::vector<Expression> parseInitExpressionVector();
-		std::vector<u32> parseU32Vector();
+		std::vector<ModuleFunctionIndex> parseU32Vector();
 
 		void throwParsingError(const char*) const;
 
@@ -461,16 +466,16 @@ namespace WASM {
 	private:
 		const ParsingState& s() const { assert(parsingState); return *parsingState; }
 
-		const FunctionType& functionTypeByIndex(u32);
-		const TableType& tableTypeByIndex(u32);
-		const MemoryType& memoryTypeByIndex(u32);
-		const GlobalType& globalTypeByIndex(u32);
+		const FunctionType& functionTypeByIndex(ModuleFunctionIndex);
+		const TableType& tableTypeByIndex(ModuleTableIndex);
+		const MemoryType& memoryTypeByIndex(ModuleMemoryIndex);
+		const GlobalType& globalTypeByIndex(ModuleGlobalIndex);
 
-		void validateFunction(u32);
+		void validateFunction(LocalFunctionIndex);
 		void validateTableType(const TableType&);
 		void validateMemoryType(const MemoryType&);
 		void validateExport(const Export&);
-		void validateStartFunction(u32);
+		void validateStartFunction(ModuleFunctionIndex);
 		void validateGlobal(const DeclaredGlobal&);
 		void validateElementSegment(const Element&);
 		void validateImports();

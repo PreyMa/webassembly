@@ -10,7 +10,7 @@
 
 using namespace WASM;
 
-HostFunctionBase::HostFunctionBase(u32 idx, FunctionType ft)
+HostFunctionBase::HostFunctionBase(ModuleFunctionIndex idx, FunctionType ft)
 	: Function{ idx }, mFunctionType { std::move(ft) } {}
 
 void HostFunctionBase::print(std::ostream& out) const {
@@ -149,12 +149,12 @@ Nullable<Function> Interpreter::findFunction(const std::string& moduleName, cons
 	return moduleFind->second->exportedFunctionByName(functionName);
 }
 
-u32 Interpreter::indexOfDeduplicatedFunctionType(FunctionType& funcType) const
+InterpreterTypeIndex Interpreter::indexOfInterpreterFunctionType(FunctionType& funcType) const
 {
 	auto beginIt = functionTypes.begin();
 	auto findIt = std::find(beginIt, functionTypes.end(), funcType);
 	assert(findIt != functionTypes.end());
-	return findIt - beginIt;
+	return InterpreterTypeIndex{ (u32)(findIt - beginIt) };
 }
 
 void Interpreter::initState(const BytecodeFunction& function)

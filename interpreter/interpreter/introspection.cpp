@@ -96,7 +96,7 @@ void DebugLogger::onParsingTypeSection(std::span<FunctionType> functionTypes)
 	}
 }
 
-void DebugLogger::onParsingFunctionSection(std::span<u32> functionDeclarations)
+void DebugLogger::onParsingFunctionSection(std::span<ModuleTypeIndex> functionDeclarations)
 {
 	if (doLoggingWhenParsing()) {
 		auto& stream = outStream();
@@ -169,7 +169,7 @@ void DebugLogger::onParsingExportSection(std::span<Export> exports)
 	}
 }
 
-void DebugLogger::onParsingStrartSection(u32 startFunctionIndex)
+void DebugLogger::onParsingStrartSection(ModuleFunctionIndex startFunctionIndex)
 {
 	if (doLoggingWhenParsing()) {
 		outStream() << "-> Parsed start section containing start function index " << startFunctionIndex << std::endl;
@@ -226,7 +226,7 @@ void DebugLogger::onParsingImportSection(
 		u32 i = 0;
 		for (auto& funcImport : functionImports) {
 			printImport(ImportType::FunctionImport, funcImport);
-			stream << " (id: " << i++ << ") indexing type: " << funcImport.moduleBasedFunctionTypeIndex() << std::endl;
+			stream << " (id: " << i++ << ") indexing type: " << funcImport.moduleTypeIndex() << std::endl;
 		}
 
 		for (auto& tableImport : tableImports) {
@@ -270,7 +270,7 @@ void DebugLogger::onModulImportsValidationFinished()
 {
 }
 
-void DebugLogger::onValidatingFunction(u32 functionIdx, const FunctionType& functionType)
+void DebugLogger::onValidatingFunction(ModuleFunctionIndex functionIdx, const FunctionType& functionType)
 {
 	if (doLoggingWhenValidating()) {
 		auto& stream = outStream();
@@ -313,7 +313,7 @@ void DebugLogger::onValidatingExport(const Export& exportItem)
 	}
 }
 
-void DebugLogger::onValidatingStartFunction(u32 functionIdx)
+void DebugLogger::onValidatingStartFunction(ModuleFunctionIndex functionIdx)
 {
 	if (doLoggingWhenValidating()) {
 		outStream() << "Validated start function with index " << functionIdx << std::endl;
@@ -348,7 +348,7 @@ void WASM::DebugLogger::onModuleLinkingFinished()
 {
 }
 
-void WASM::DebugLogger::onAddingLinkingDependency(const Module& importingModule, const Imported& import, u32 idx)
+void WASM::DebugLogger::onAddingLinkingDependency(const Module& importingModule, const Imported& import, ModuleExportIndex idx)
 {
 	if (doLoggingWhenLinking()) {
 		auto& stream = outStream();

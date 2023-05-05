@@ -1763,7 +1763,7 @@ void Instruction::print(std::ostream& out, const BufferSlice& data) const
 BlockTypeIndex Instruction::blockTypeIndex() const
 {
 	assert(type.isBlock());
-	return { BlockType::fromInt(operandA), operandB };
+	return { BlockType::fromInt(operandA), ModuleTypeIndex{ operandB } };
 }
 
 u32 Instruction::branchLabel() const {
@@ -1782,15 +1782,15 @@ u32 Instruction::localIndex() const {
 	return operandA;
 }
 
-u32 Instruction::globalIndex() const
+ModuleGlobalIndex Instruction::globalIndex() const
 {
 	assert(type == InstructionType::GlobalGet || type == InstructionType::GlobalSet);
-	return operandA;
+	return ModuleGlobalIndex{ operandA };
 }
 
-u32 Instruction::functionIndex() const {
+ModuleFunctionIndex Instruction::functionIndex() const {
 	assert(type == InstructionType::Call || type == InstructionType::CallIndirect);
-	return operandA;
+	return ModuleFunctionIndex{ operandA };
 }
 
 u32 Instruction::memoryOffset() const
@@ -1805,10 +1805,10 @@ u32 Instruction::dataSegmentIndex() const
 	return operandA;
 }
 
-u32 Instruction::callTableIndex() const
+ModuleTableIndex Instruction::callTableIndex() const
 {
 	assert(type == InstructionType::CallIndirect);
-	return operandB;
+	return ModuleTableIndex{ operandB };
 }
 
 u32 Instruction::elementIndex() const
@@ -1817,10 +1817,10 @@ u32 Instruction::elementIndex() const
 	return operandB;
 }
 
-u32 Instruction::tableIndex() const
+ModuleTableIndex Instruction::tableIndex() const
 {
 	// assert(isTableInstruction());
-	return operandA;
+	return ModuleTableIndex{ operandA };
 }
 
 u32 WASM::Instruction::sourceTableIndex() const
@@ -1847,11 +1847,11 @@ u64 Instruction::asIF64Constant() const
 	return i64Constant;
 }
 
-std::optional<u32> Instruction::asReferenceIndex() const
+std::optional<ModuleFunctionIndex> Instruction::asReferenceIndex() const
 {
 	assert(type == InstructionType::ReferenceFunction || type == InstructionType::ReferenceNull);
 	if (type == InstructionType::ReferenceFunction) {
-		return operandA;
+		return ModuleFunctionIndex{ operandA };
 	}
 
 	return {};

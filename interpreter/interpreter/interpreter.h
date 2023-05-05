@@ -88,7 +88,7 @@ namespace WASM {
 		ValuePack runInterpreterLoop(const BytecodeFunction&, std::span<Value>);
 
 		Nullable<Function> findFunction(const std::string&, const std::string&);
-		u32 indexOfDeduplicatedFunctionType(FunctionType&) const;
+		InterpreterTypeIndex indexOfInterpreterFunctionType(FunctionType&) const;
 
 		void initState(const BytecodeFunction& function);
 		void saveState(const u8*, u32*, u32*, Module*);

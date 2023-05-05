@@ -5,6 +5,7 @@
 #include "util.h"
 #include "enum.h"
 #include "buffer.h"
+#include "indices.h"
 
 namespace WASM {
 	class InstructionType : public Enum <InstructionType> {
@@ -236,12 +237,12 @@ namespace WASM {
 
 	struct BlockTypeIndexBase {
 		BlockType blockType;
-		u32 index;
+		ModuleTypeIndex index;
 
 		bool operator==(BlockType t) const { return blockType == t; }
 	};
 
-	using BlockTypeParameters = std::optional<u32>;
+	using BlockTypeParameters = std::optional<ModuleTypeIndex>;
 	struct BlockTypeResults final : public BlockTypeIndexBase {};
 
 	struct BlockTypeIndex final : public BlockTypeIndexBase {
@@ -291,19 +292,19 @@ namespace WASM {
 		u32 branchLabel() const;
 		u32 branchTableDefaultLabel() const;
 		u32 localIndex() const;
-		u32 globalIndex() const;
-		u32 functionIndex() const;
+		ModuleGlobalIndex globalIndex() const;
+		ModuleFunctionIndex functionIndex() const;
+		ModuleTableIndex tableIndex() const;
 		u32 memoryOffset() const;
 		u32 dataSegmentIndex() const;
-		u32 callTableIndex() const;
+		ModuleTableIndex callTableIndex() const;
 		u32 elementIndex() const;
-		u32 tableIndex() const;
 		u32 sourceTableIndex() const;
 
 		i32 asI32Constant() const;
 		u32 asIF32Constant() const;
 		u64 asIF64Constant() const;
-		std::optional<u32> asReferenceIndex() const;
+		std::optional<ModuleFunctionIndex> asReferenceIndex() const;
 
 		std::span<const u8> selectTypeVector(const BufferSlice&) const;
 		BufferIterator branchTableVector(const BufferSlice&) const;

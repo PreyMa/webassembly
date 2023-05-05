@@ -13,20 +13,20 @@ namespace WASM {
 
 	class Function {
 	public:
-		Function(u32 idx) : mIndex{ idx } {}
+		Function(ModuleFunctionIndex idx) : mIndex{ idx } {}
 		virtual ~Function() = default;
 
-		u32 index() const { return mIndex; }
+		ModuleFunctionIndex index() const { return mIndex; }
 		Nullable<const std::string> lookupName(const Module&) const;
 
 		virtual Nullable<const BytecodeFunction> asBytecodeFunction() const { return {}; }
 		virtual Nullable<const HostFunctionBase> asHostFunction() const { return {}; }
 		virtual const FunctionType& functionType() const = 0;
-		u32 deduplicatedTypeIndex() const { return mDeduplicatedTypeIndex; }
+		InterpreterTypeIndex interpreterTypeIndex() const { return mInterpreterTypeIndex; }
 
 	protected:
-		u32 mIndex;
-		u32 mDeduplicatedTypeIndex{ 0 };
+		ModuleFunctionIndex mIndex;
+		InterpreterTypeIndex mInterpreterTypeIndex{ 0 };
 	};
 
 	class BytecodeFunction final : public Function {
@@ -39,14 +39,14 @@ namespace WASM {
 		// size of RA + FP + SP + MP
 		static constexpr u32 SpecialFrameBytes = 32;
 
-		BytecodeFunction(u32 idx, u32 ti, FunctionType& t, FunctionCode&& c);
+		BytecodeFunction(ModuleFunctionIndex idx, ModuleTypeIndex ti, FunctionType& t, FunctionCode&& c);
 
 		virtual Nullable<const BytecodeFunction> asBytecodeFunction() const { return *this; }
 
-		u32 moduleBaseTypeIndex() const { return mModuleBasedTypeIndex; }
+		ModuleTypeIndex moduleBaseTypeIndex() const { return mModuleTypeIndex; }
 		const Expression& expression() const { return code; }
 
-		void setLinkedFunctionType(u32 idx, FunctionType& ft) { mDeduplicatedTypeIndex= idx;  type = ft; }
+		void setLinkedFunctionType(InterpreterTypeIndex idx, FunctionType& ft) { mInterpreterTypeIndex = idx;  type = ft; }
 		virtual const FunctionType& functionType() const override { return *type; }
 
 		u32 maxStackHeight() const { return mMaxStackHeight; }
@@ -64,7 +64,7 @@ namespace WASM {
 	private:
 		void uncompressLocalTypes(const std::vector<CompressedLocalTypes>&);
 
-		u32 mModuleBasedTypeIndex;
+		ModuleTypeIndex mModuleTypeIndex;
 		NonNull<FunctionType> type;
 		Expression code;
 		std::vector<LocalOffset> uncompressedLocals;
@@ -74,7 +74,7 @@ namespace WASM {
 
 	class FunctionTable {
 	public:
-		FunctionTable(u32, const TableType&);
+		FunctionTable(ModuleTableIndex, const TableType&);
 
 		auto& limits() const { return mLimits; }
 		ValType type() const { return mType; }
@@ -83,7 +83,7 @@ namespace WASM {
 		void init(const LinkedElement&, u32, u32, u32);
 
 	private:
-		u32 index;
+		ModuleTableIndex index;
 		ValType mType;
 		Limits mLimits;
 		std::vector<Nullable<Function>> table;
@@ -91,10 +91,10 @@ namespace WASM {
 
 	class LinkedElement {
 	public:
-		LinkedElement(u32 idx, ElementMode m, ValType t, u32 i, u32 o, std::vector<Nullable<Function>> f)
+		LinkedElement(ModuleElementIndex idx, ElementMode m, ValType t, ModuleTableIndex i, u32 o, std::vector<Nullable<Function>> f)
 			: index{ idx }, mMode{ m }, refType{ t }, tableIndex{ i }, tableOffset{ o }, mFunctions{ std::move(f) } {}
 
-		LinkedElement(u32 idx, ElementMode m, ValType t, u32 i, u32 o)
+		LinkedElement(ModuleElementIndex idx, ElementMode m, ValType t, ModuleTableIndex i, u32 o)
 			: index{ idx }, mMode{ m }, refType{ t }, tableIndex{ i }, tableOffset{ o } {
 			assert(mMode == ElementMode::Passive);
 		}
@@ -105,10 +105,10 @@ namespace WASM {
 		const std::vector<Nullable<Function>>& references() const { return mFunctions; }
 
 	private:
-		u32 index;
+		ModuleElementIndex index;
 		ElementMode mMode;
 		ValType refType;
-		u32 tableIndex;
+		ModuleTableIndex tableIndex;
 		u32 tableOffset;
 		std::vector<Nullable<Function>> mFunctions;
 	};
@@ -117,7 +117,7 @@ namespace WASM {
 	public:
 		static constexpr u64 PageSize = 65536;
 
-		Memory(u32, Limits l);
+		Memory(ModuleMemoryIndex, Limits l);
 
 		i32 grow(i32);
 
@@ -134,7 +134,7 @@ namespace WASM {
 		}
 
 	private:
-		u32 mIndex;
+		ModuleMemoryIndex mIndex;
 		Limits mLimits;
 		std::vector<u8> mData;
 	};
@@ -194,7 +194,7 @@ namespace WASM {
 			std::vector<Global<u32>> g64,
 			std::vector<Global<u64>> g32,
 			std::vector<Element> el,
-			std::optional<u32> sf,
+			std::optional<ModuleFunctionIndex> sf,
 			std::vector<FunctionImport> imFs,
 			std::vector<TableImport> imTs,
 			std::optional<MemoryImport> imMs,
@@ -210,17 +210,17 @@ namespace WASM {
 		void initTables(Nullable<Introspector>);
 		void initGlobals(Nullable<Introspector>);
 
-		Nullable<Function> functionByIndex(u32);
-		std::optional<ResolvedGlobal> globalByIndex(u32);
-		Nullable<Memory> memoryByIndex(u32);
-		Nullable<FunctionTable> tableByIndex(u32);
+		Nullable<Function> functionByIndex(ModuleFunctionIndex);
+		std::optional<ResolvedGlobal> globalByIndex(ModuleGlobalIndex);
+		Nullable<Memory> memoryByIndex(ModuleMemoryIndex);
+		Nullable<FunctionTable> tableByIndex(ModuleTableIndex);
 		Nullable<Function> startFunction() const { return mStartFunction; }
 		Nullable<Memory> memoryWithIndexZero() const { return linkedMemory; }
 
 		Nullable<const Function> findFunctionByBytecodePointer(const u8*) const;
 
 		std::optional<ExportItem> exportByName(const std::string&, ExportType) const;
-		Nullable<const std::string> functionNameByIndex(u32) const;
+		Nullable<const std::string> functionNameByIndex(ModuleFunctionIndex) const;
 		virtual Nullable<Function> exportedFunctionByName(const std::string&) override;
 		virtual Nullable<FunctionTable> exportedTableByName(const std::string&) override;
 		virtual Nullable<Memory> exportedMemoryByName(const std::string&) override;
@@ -237,7 +237,7 @@ namespace WASM {
 			std::vector<GlobalImport> importedGlobals;
 			std::vector<DeclaredGlobal> globalTypes;
 			std::vector<Element> elements;
-			std::optional<u32> startFunctionIndex;
+			std::optional<ModuleFunctionIndex> startFunctionIndex;
 			std::vector<FunctionType> functionTypes;
 		};
 
@@ -400,9 +400,9 @@ namespace WASM {
 		void resetCachedReturnList(u32);
 
 		BytecodeFunction::LocalOffset localByIndex(u32) const;
-		ResolvedGlobal globalByIndex(u32) const;
-		const FunctionType& blockTypeByIndex(u32);
-		const Memory& memoryByIndex(u32);
+		ResolvedGlobal globalByIndex(ModuleGlobalIndex) const;
+		const FunctionType& blockTypeByIndex(ModuleTypeIndex);
+		const Memory& memoryByIndex(ModuleMemoryIndex);
 		u32 measureMaxPrintedBlockLength(u32, u32, bool= false) const;
 		void requestAddressPatch(u32, bool, bool = false, std::optional<u32> jumpReferencePosition = {});
 		void patchAddress(const AddressPatchRequest&);
