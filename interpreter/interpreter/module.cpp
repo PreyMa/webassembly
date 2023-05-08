@@ -773,58 +773,50 @@ void ModuleLinker::buildDeduplicatedFunctionTypeTable()
 		auto findIt = std::find(allFunctionTypes.begin(), allFunctionTypes.end(), type);
 		if (findIt == allFunctionTypes.end()) {
 			allFunctionTypes.emplace_back(type);
+			return InterpreterTypeIndex{ (u32)allFunctionTypes.size() - 1 };
 		}
+		return InterpreterTypeIndex{ (u32)(findIt - allFunctionTypes.begin()) };
 	};
 
+	std::vector<InterpreterTypeIndex> typeMap;
 	for (auto& module : modules) {
 		auto& types = module.compilationData->functionTypes();
+		typeMap.reserve(types.size());
+
+		// Map each module type index to a interpreter type index by inserting/finding
+		// it in the global array
 		for (auto& type : types) {
-			insertDedupedFunctionType(type);
+			typeMap.emplace_back(insertDedupedFunctionType(type));
 		}
-	}
 
-	for (auto& module : interpreter.hostModules) {
-		for (auto& function : module.mFunctions) {
-			insertDedupedFunctionType(function.second->functionType());
-		}
-	}
-
-	const auto findDedupedFunctionType = [&](const Module& module, ModuleTypeIndex typeIdx) {
-		assert(typeIdx < module.compilationData->functionTypes().size());
-		auto& type = module.compilationData->functionTypes()[typeIdx.value];
-
-		auto findIt = std::find(allFunctionTypes.begin(), allFunctionTypes.end(), type);
-		assert(findIt != allFunctionTypes.end());
-		return findIt;
-	};
-
-	for (auto& module : modules) {
+		// Use the map to set the type indices for each function and import based
+		// on their module type index
 		for (auto& function : module.mFunctions.span(allFunctions)) {
-			auto typeIdx = function.moduleBaseTypeIndex();
-			auto findIt = findDedupedFunctionType(module, typeIdx);
+			auto moduleTypeIdx = function.moduleTypeIndex();
 
-			InterpreterTypeIndex interpreterTypeIdx{ (u32)(findIt - allFunctionTypes.begin()) };
-			function.setLinkedFunctionType( interpreterTypeIdx, *findIt);
+			assert(moduleTypeIdx < typeMap.size());
+			auto interpreterTypeIdx = typeMap[moduleTypeIdx.value];
+			assert(interpreterTypeIdx < allFunctionTypes.size());
+			function.setLinkedFunctionType(interpreterTypeIdx, allFunctionTypes[interpreterTypeIdx.value]);
 		}
 
-		auto& functionImports = const_cast<std::vector<FunctionImport>&>(module.compilationData->importedFunctions());
+		auto& functionImports = module.compilationData->mutateImportedFunctions();
 		for (auto& functionImport : functionImports) {
 			assert(!functionImport.hasInterpreterTypeIndex());
-			auto findIt = findDedupedFunctionType(module, functionImport.moduleTypeIndex());
+			auto moduleTypeIdx = functionImport.moduleTypeIndex();
 
-			InterpreterTypeIndex interpreterTypeIdx{ (u32)(findIt - allFunctionTypes.begin()) };
+			assert(moduleTypeIdx < typeMap.size());
+			auto interpreterTypeIdx = typeMap[moduleTypeIdx.value];
 			functionImport.interpreterTypeIndex(interpreterTypeIdx);
 		}
 	}
 
+	// Set type indices of host modules
 	for (auto& module : interpreter.hostModules) {
 		for (auto& functionPair : module.mFunctions) {
 			auto& function = *functionPair.second;
+			auto interpreterTypeIdx = insertDedupedFunctionType(function.functionType());
 
-			auto findIt = std::find(allFunctionTypes.begin(), allFunctionTypes.end(), function.functionType());
-			assert(findIt != allFunctionTypes.end());
-			
-			InterpreterTypeIndex interpreterTypeIdx{ (u32)(findIt - allFunctionTypes.begin()) };
 			function.setLinkedFunctionType(interpreterTypeIdx);
 		}
 	}
@@ -1039,7 +1031,7 @@ void ModuleCompiler::compileFunction(BytecodeFunction& function)
 
 	setFunctionContext(function);
 
-	auto typeIdx = function.moduleBaseTypeIndex();
+	auto typeIdx = function.moduleTypeIndex();
 	controlStack.emplace_back(InstructionType::NoOperation, BlockTypeIndex{ BlockType::TypeIndex, typeIdx }, 0, 0, false, 0);
 
 	// Print entry bytecode if the function has any locals or requires the module instance

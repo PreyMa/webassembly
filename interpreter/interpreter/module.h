@@ -45,7 +45,7 @@ namespace WASM {
 
 		virtual Nullable<const BytecodeFunction> asBytecodeFunction() const { return *this; }
 
-		ModuleTypeIndex moduleBaseTypeIndex() const { return mModuleTypeIndex; }
+		ModuleTypeIndex moduleTypeIndex() const { return mModuleTypeIndex; }
 		const Expression& expression() const { return code; }
 
 		void setLinkedFunctionType(InterpreterTypeIndex idx, FunctionType& ft) { mInterpreterTypeIndex = idx;  type = ft; }
