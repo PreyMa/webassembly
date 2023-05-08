@@ -364,33 +364,50 @@ namespace WASM {
 		using NameMap = std::unordered_map<u32, std::string>;
 		using IndirectNameMap = std::unordered_map<u32, NameMap>;
 
-	protected:
-		friend class ModuleValidator;
+		auto& path() const { return mPath; }
+		auto& customSections() const { return mCustomSections; }
+		auto& functionTypes() const { return mFunctionTypes; }
+		auto& functions() const { return mFunctions; }
+		auto& tableTypes() const { return mTableTypes; }
+		auto& memoryTypes() const { return mMemoryTypes; }
+		auto& globals() const { return mGlobals; }
+		auto& exports() const { return mExports; }
+		auto& startFunctionIndex() const { return mStartFunctionIndex; }
+		auto& elements() const { return mElements; }
+		auto& functionCodes() const { return mFunctionCodes; }
+		auto& importedFunctions() const { return mImportedFunctions; }
+		auto& importedTableTypes() const { return mImportedTableTypes; }
+		auto& importedMemoryTypes() const { return mImportedMemoryTypes; }
+		auto& importedGlobalTypes() const { return mImportedGlobalTypes; }
+		auto& name() const { return mName; }
+		auto& functionNames() const { return mFunctionNames; }
+		auto& functionLocalNames() const { return mFunctionLocalNames; }
 
+	protected:
 		void clear();
 
-		std::string path;
-		Buffer data;
-		BufferIterator it;
-		std::unordered_map<std::string, BufferSlice> customSections;
-		std::vector<FunctionType> functionTypes;
-		std::vector<ModuleTypeIndex> functions;
-		std::vector<TableType> tableTypes;
-		std::vector<MemoryType> memoryTypes;
-		std::vector<DeclaredGlobal> globals;
-		std::vector<Export> exports;
-		std::optional<ModuleFunctionIndex> startFunctionIndex;
-		std::vector<Element> elements;
-		std::vector<FunctionCode> functionCodes;
+		std::string mPath;
+		Buffer mData;
+		BufferIterator mIt;
+		std::unordered_map<std::string, BufferSlice> mCustomSections;
+		std::vector<FunctionType> mFunctionTypes;
+		std::vector<ModuleTypeIndex> mFunctions;
+		std::vector<TableType> mTableTypes;
+		std::vector<MemoryType> mMemoryTypes;
+		std::vector<DeclaredGlobal> mGlobals;
+		std::vector<Export> mExports;
+		std::optional<ModuleFunctionIndex> mStartFunctionIndex;
+		std::vector<Element> mElements;
+		std::vector<FunctionCode> mFunctionCodes;
 
-		std::vector<FunctionImport> importedFunctions;
-		std::vector<TableImport> importedTableTypes;
-		std::vector<MemoryImport> importedMemoryTypes;
-		std::vector<GlobalImport> importedGlobalTypes;
+		std::vector<FunctionImport> mImportedFunctions;
+		std::vector<TableImport> mImportedTableTypes;
+		std::vector<MemoryImport> mImportedMemoryTypes;
+		std::vector<GlobalImport> mImportedGlobalTypes;
 
 		std::string mName;
-		NameMap functionNames;
-		IndirectNameMap functionLocalNames;
+		NameMap mFunctionNames;
+		IndirectNameMap mFunctionLocalNames;
 	};
 
 	class ModuleParser : public ParsingState {
@@ -401,18 +418,18 @@ namespace WASM {
 		Module toModule();
 
 	private:
-		bool hasNext(u32 num = 1) const { return it.hasNext(num); }
-		u8 nextU8() { return it.nextU8(); }
-		void assertU8(u8 byte) { it.assertU8(byte); }
+		bool hasNext(u32 num = 1) const { return mIt.hasNext(num); }
+		u8 nextU8() { return mIt.nextU8(); }
+		void assertU8(u8 byte) { mIt.assertU8(byte); }
 
-		u32 nextU32() { return it.nextU32(); }
-		i32 nextI32() { return it.nextI32(); }
+		u32 nextU32() { return mIt.nextU32(); }
+		i32 nextI32() { return mIt.nextI32(); }
 
-		u32 nextBigEndianU32() { return it.nextBigEndianU32(); }
+		u32 nextBigEndianU32() { return mIt.nextBigEndianU32(); }
 		
-		BufferSlice nextSliceOf(u32 length) { return it.nextSliceOf(length); }
-		BufferSlice nextSliceTo(const BufferIterator& pos) { return it.nextSliceTo(pos); }
-		BufferSlice sliceFrom(const BufferIterator& pos) const { return it.sliceFrom(pos); }
+		BufferSlice nextSliceOf(u32 length) { return mIt.nextSliceOf(length); }
+		BufferSlice nextSliceTo(const BufferIterator& pos) { return mIt.nextSliceTo(pos); }
+		BufferSlice sliceFrom(const BufferIterator& pos) const { return mIt.sliceFrom(pos); }
 
 		std::string parseNameString();
 
