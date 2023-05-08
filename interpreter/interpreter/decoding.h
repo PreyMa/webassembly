@@ -147,12 +147,12 @@ namespace WASM {
 		const GlobalType& type() const { return mType; }
 		const ValType valType() const { return mType.valType(); }
 
-		void setIndexInTypedStorageArray(ModuleGlobalTypedArrayIndex idx);
+		void setIndexInTypedStorageArray(InterpreterGlobalTypedArrayIndex idx);
 		auto indexInTypedStorageArray() const { return mIndexInTypedStorageArray; }
 
 	protected:
 		GlobalType mType;
-		std::optional<ModuleGlobalTypedArrayIndex> mIndexInTypedStorageArray;
+		std::optional<InterpreterGlobalTypedArrayIndex> mIndexInTypedStorageArray;
 	};
 
 	class DeclaredGlobal final : public DeclaredHostGlobal {
@@ -383,6 +383,17 @@ namespace WASM {
 		auto& functionNames() const { return mFunctionNames; }
 		auto& functionLocalNames() const { return mFunctionLocalNames; }
 
+		// Getters that allow moving parts out of the parsing state into different storage
+		auto releaseElements() const { return std::move(mElements); }
+		auto releaseFunctionCodes() const { return std::move(mFunctionCodes); }
+		auto releaseFunctionNames() const { return std::move(mFunctionNames); }
+		auto releaseFunctionLocalNames() const { return std::move(mFunctionLocalNames); }
+
+		auto& mutateImportedFunctions() { return mImportedFunctions; }
+		auto& mutateImportedTableTypes() { return mImportedTableTypes; }
+		auto& mutateImportedMemoryTypes() { return mImportedMemoryTypes; }
+		auto& mutateImportedGlobalTypes() { return mImportedGlobalTypes; }
+
 	protected:
 		void clear();
 
@@ -415,7 +426,7 @@ namespace WASM {
 		ModuleParser(Nullable<Introspector> intro) : introspector{ intro } {}
 
 		void parse(Buffer, std::string);
-		Module toModule();
+		Module toModule(Interpreter&);
 
 	private:
 		bool hasNext(u32 num = 1) const { return mIt.hasNext(num); }

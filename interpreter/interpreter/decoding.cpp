@@ -30,113 +30,42 @@ void ModuleParser::parse(Buffer buffer, std::string modulePath)
 	}
 }
 
-Module ModuleParser::toModule()
+Module ModuleParser::toModule(Interpreter& interpreter)
 {
-	// Create bytecode function objects
-	std::vector<BytecodeFunction> bytecodeFunctions;
-	bytecodeFunctions.reserve(mFunctions.size());
-
-	for (u32 i = 0; i != mFunctions.size(); i++) {
-		ModuleFunctionIndex functionIdx{ (u32)(i + mImportedFunctions.size()) };
-		auto typeIdx = mFunctions[i];
-		assert(typeIdx < mFunctionTypes.size());
-		auto& funcType = mFunctionTypes[typeIdx.value];
-		auto& funcCode = mFunctionTypes[i];
-		bytecodeFunctions.emplace_back(functionIdx, typeIdx, funcType, std::move(funcCode));
-	}
-
-	// Create function table objects
-	std::vector<FunctionTable> functionTables;
-	functionTables.reserve(mTableTypes.size());
-
-	for (u32 i = 0; i != mTableTypes.size(); i++) {
-		ModuleTableIndex tableIdx{ (u32)(i + mImportedTableTypes.size()) };
-		auto& tableType = mTableTypes[i];
-		functionTables.emplace_back(tableIdx, tableType);
-	}
-
-	// Create memory instance if one is defined
-	std::optional<Memory> memoryInstance;
-	if (!mMemoryTypes.empty()) {
-		memoryInstance.emplace(ModuleMemoryIndex{ 0 }, mMemoryTypes[0].limits());
-	}
-
-	// Count the number of 32bit and 64bit globals, assign relative indices
-	// and allocate arrays for them
-	u32 num32BitGlobals= 0;
-	u32 num64BitGlobals= 0;
-	for (auto& global : mGlobals) {
-		auto size = global.valType().sizeInBytes();
-		if (size == 4) {
-			ModuleGlobalTypedArrayIndex idx{ num32BitGlobals++ };
-			global.setIndexInTypedStorageArray(idx);
-		}
-		else if (size == 8) {
-			ModuleGlobalTypedArrayIndex idx{ num64BitGlobals++ };
-			global.setIndexInTypedStorageArray(idx);
-		}
-		else {
-			throw ValidationError{ mPath, "Only globals with 32bits and 64bits are supported" };
-		}
-	}
-
-	std::vector<Global<u32>> globals32bit;
-	globals32bit.reserve(num32BitGlobals);
-	globals32bit.insert(globals32bit.end(), num32BitGlobals, {});
-
-	std::vector<Global<u64>> globals64bit;
-	globals64bit.reserve(num64BitGlobals);
-	globals64bit.insert(globals64bit.end(), num64BitGlobals, {});
-
 	// Create export table object
 	ExportTable exportTable;
 	exportTable.reserve(mExports.size());
 
 	for (auto& exp : mExports) {
-		exportTable.emplace( exp.moveName(), exp.toItem());
+		exportTable.emplace(exp.moveName(), exp.toItem());
 	}
 
-	// Create memory import if one is required
-	std::optional<MemoryImport> memoryImport;
-	if (!mImportedMemoryTypes.empty()) {
-		memoryImport.emplace(std::move(mImportedMemoryTypes[0]));
-	}
+	auto data = std::move(mData);
+	auto path = std::move(mPath);
+	auto name = std::move(mName);
 
-	// FIXME: Just use the path as name for now
-	if (mName.empty()) {
-		auto begin= mPath.find_last_of("/\\");
+	// FIXME: Just use part of the path as a name for now
+	if (name.empty()) {
+		auto begin= path.find_last_of("/\\");
 		if (begin == std::string::npos) {
 			begin = 0;
 		}
 
-		auto end = mPath.find_first_of('.', begin);
+		auto end = path.find_first_of('.', begin);
 		if (end == std::string::npos) {
-			end = mPath.size();
+			end = path.size();
 		}
 
-		mName = mPath.substr(begin+1, end- begin -1);
+		name = path.substr(begin+1, end- begin -1);
 	}
 
 	return Module{
+		interpreter,
 		std::move(data),
 		std::move(path),
-		std::move(mName),
-		std::move(functionTypes),
-		std::move(bytecodeFunctions),
-		std::move(functionTables),
-		std::move(memoryInstance),
+		std::move(name),
+		std::make_unique<ParsingState>(std::move(*this)),
 		std::move(exportTable),
-		std::move(globals),
-		std::move(globals32bit),
-		std::move(globals64bit),
-		std::move(elements),
-		std::move(startFunctionIndex),
-		// Imports
-		std::move(importedFunctions),
-		std::move(importedTableTypes),
-		std::move(memoryImport),
-		std::move(importedGlobalTypes),
-		std::move(functionNames)
 	};
 }
 
@@ -1093,7 +1022,7 @@ void TableType::print(std::ostream& out) const
 	mLimits.print(out);
 }
 
-void DeclaredHostGlobal::setIndexInTypedStorageArray(ModuleGlobalTypedArrayIndex idx)
+void DeclaredHostGlobal::setIndexInTypedStorageArray(InterpreterGlobalTypedArrayIndex idx)
 {
 	assert(!mIndexInTypedStorageArray.has_value());
 	mIndexInTypedStorageArray = idx;

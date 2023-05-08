@@ -13,10 +13,12 @@ namespace WASM {
 
 	class Function {
 	public:
-		Function(ModuleFunctionIndex idx) : mIndex{ idx } {}
+		Function(ModuleFunctionIndex idx)
+			: mModuleIndex{ idx } {}
+
 		virtual ~Function() = default;
 
-		ModuleFunctionIndex index() const { return mIndex; }
+		ModuleFunctionIndex moduleIndex() const { return mModuleIndex; }
 		Nullable<const std::string> lookupName(const Module&) const;
 
 		virtual Nullable<const BytecodeFunction> asBytecodeFunction() const { return {}; }
@@ -25,7 +27,7 @@ namespace WASM {
 		InterpreterTypeIndex interpreterTypeIndex() const { return mInterpreterTypeIndex; }
 
 	protected:
-		ModuleFunctionIndex mIndex;
+		ModuleFunctionIndex mModuleIndex;
 		InterpreterTypeIndex mInterpreterTypeIndex{ 0 };
 	};
 
@@ -39,7 +41,7 @@ namespace WASM {
 		// size of RA + FP + SP + MP
 		static constexpr u32 SpecialFrameBytes = 32;
 
-		BytecodeFunction(ModuleFunctionIndex idx, ModuleTypeIndex ti, FunctionType& t, FunctionCode&& c);
+		BytecodeFunction(ModuleFunctionIndex idx, ModuleTypeIndex ti, const FunctionType& t, FunctionCode c);
 
 		virtual Nullable<const BytecodeFunction> asBytecodeFunction() const { return *this; }
 
@@ -59,13 +61,13 @@ namespace WASM {
 		u32 localsCount() const;
 		u32 operandStackSectionOffsetInBytes() const;
 		u32 localsSizeInBytes() const;
-		bool requiresModuleInstance() const;
+		bool requiresMemoryInstance() const;
 
 	private:
 		void uncompressLocalTypes(const std::vector<CompressedLocalTypes>&);
 
 		ModuleTypeIndex mModuleTypeIndex;
-		NonNull<FunctionType> type;
+		NonNull<const FunctionType> type;
 		Expression code;
 		std::vector<LocalOffset> uncompressedLocals;
 		u32 mMaxStackHeight{ 0 };
@@ -182,24 +184,12 @@ namespace WASM {
 	class Module final : public ModuleBase {
 	public:
 		Module(
-			Buffer b,
-			std::string p,
-			std::string n,
-			std::vector<FunctionType> ft,
-			std::vector<BytecodeFunction> fs,
-			std::vector<FunctionTable> ts,
-			std::optional<Memory> ms,
-			ExportTable ex,
-			std::vector<DeclaredGlobal> gt,
-			std::vector<Global<u32>> g64,
-			std::vector<Global<u64>> g32,
-			std::vector<Element> el,
-			std::optional<ModuleFunctionIndex> sf,
-			std::vector<FunctionImport> imFs,
-			std::vector<TableImport> imTs,
-			std::optional<MemoryImport> imMs,
-			std::vector<GlobalImport> imGs,
-			ParsingState::NameMap fns
+			Interpreter&,
+			Buffer,
+			std::string,
+			std::string,
+			std::unique_ptr<ParsingState>,
+			ExportTable
 		);
 		Module(Module&& m) = default;
 
@@ -207,15 +197,14 @@ namespace WASM {
 		virtual std::string_view name() const override { return mName; }
 
 		bool needsLinking() const { return compilationData != nullptr; }
-		void initTables(Nullable<Introspector>);
-		void initGlobals(Nullable<Introspector>);
+		void instantiate(ModuleLinker&, Nullable<Introspector>);
 
 		Nullable<Function> functionByIndex(ModuleFunctionIndex);
 		std::optional<ResolvedGlobal> globalByIndex(ModuleGlobalIndex);
 		Nullable<Memory> memoryByIndex(ModuleMemoryIndex);
 		Nullable<FunctionTable> tableByIndex(ModuleTableIndex);
-		Nullable<Function> startFunction() const { return mStartFunction; }
-		Nullable<Memory> memoryWithIndexZero() const { return linkedMemory; }
+		Nullable<Function> startFunction() const { return mLinkedStartFunction; }
+		Nullable<Memory> memoryWithIndexZero() const { return mLinkedMemory; }
 
 		Nullable<const Function> findFunctionByBytecodePointer(const u8*) const;
 
@@ -230,35 +219,27 @@ namespace WASM {
 		friend class ModuleCompiler;
 		friend class ModuleLinker;
 
-		struct CompilationData {
-			std::vector<FunctionImport> importedFunctions;
-			std::vector<TableImport> importedTables;
-			std::optional<MemoryImport> importedMemory;
-			std::vector<GlobalImport> importedGlobals;
-			std::vector<DeclaredGlobal> globalTypes;
-			std::vector<Element> elements;
-			std::optional<ModuleFunctionIndex> startFunctionIndex;
-			std::vector<FunctionType> functionTypes;
-		};
+		void createFunctions(ModuleLinker&, Nullable<Introspector>);
+		void createMemory(ModuleLinker&, Nullable<Introspector>);
+		void createTables(ModuleLinker&, Nullable<Introspector>);
+		void createGlobals(ModuleLinker&, Nullable<Introspector>);
 
-		std::string path;
+		std::string mPath;
 		std::string mName;
-		Buffer data;
+		Buffer mData;
+		NonNull<Interpreter> mInterpreter;
 
-		SealedVector<BytecodeFunction> functions;
-		SealedVector<FunctionTable> functionTables;
-		std::optional<Memory> ownedMemoryInstance;
-		SealedVector<Global<u32>> globals32;
-		SealedVector<Global<u64>> globals64;
-		std::vector<LinkedElement> elements;
+		std::optional<InterpreterMemoryIndex> mMemoryIndex;
+		IndexSpan<InterpreterFunctionIndex, BytecodeFunction> mFunctions;
+		IndexSpan<InterpreterTableIndex, FunctionTable> mTables;
+		IndexSpan<InterpreterGlobalTypedArrayIndex, Global<u32>> mGlobals32;
+		IndexSpan<InterpreterGlobalTypedArrayIndex, Global<u64>> mGlobals64;
+		IndexSpan<InterpreterLinkedElementIndex, LinkedElement> mElements;
+		Nullable<Function> mLinkedStartFunction;
+		Nullable<Memory> mLinkedMemory;
 
-		u32 numRemainingElements{ 0 };
-
-		// Linked references
-		Nullable<Function> mStartFunction;
-		Nullable<Memory> linkedMemory;
-
-		std::unique_ptr<CompilationData> compilationData;
+		//std::unique_ptr<CompilationData> compilationData;
+		std::unique_ptr<ParsingState> compilationData;
 		ExportTable exports;
 
 		u32 numImportedFunctions;
@@ -275,6 +256,14 @@ namespace WASM {
 			: interpreter{ inter }, introspector{ intro } {}
 
 		void link();
+		void storeLinkedItems();
+
+		std::vector<BytecodeFunction>& createFunctions(u32);
+		std::vector<FunctionTable>& createTables(u32);
+		std::vector<LinkedElement>& createElements(u32);
+		std::vector<Memory>& createMemory();
+		std::vector<Global<u32>>& createGlobals32(u32);
+		std::vector<Global<u64>>& createGlobals64(u32);
 
 	private:
 		struct DependencyItem {
@@ -285,6 +274,7 @@ namespace WASM {
 		};
 
 		void checkModulesLinkStatus();
+		void instantiateModules();
 		void buildDeduplicatedFunctionTypeTable();
 		sizeType countDependencyItems();
 		void createDependencyItems(const Module&, VirtualSpan<Imported>);
@@ -297,6 +287,14 @@ namespace WASM {
 		void throwLinkError(const Module&, const Imported&, const char*) const;
 		void throwLinkError(const Module&, const char*, const char*) const;
 
+		std::vector<FunctionType> allFunctionTypes;
+		std::vector<BytecodeFunction> allFunctions;
+		std::vector<FunctionTable> allTables;
+		std::vector<LinkedElement> allElements;
+		std::vector<Memory> allMemories;
+		std::vector<Global<u32>> allGlobals32;
+		std::vector<Global<u64>> allGlobals64;
+
 		ArrayList<DependencyItem> unresolvedImports;
 		std::optional<sizeType> listBegin;
 
@@ -306,7 +304,7 @@ namespace WASM {
 
 	class ModuleCompiler {
 	public:
-		ModuleCompiler(const Interpreter& i, Module& m)
+		ModuleCompiler(Interpreter& i, Module& m)
 			: interpreter{ i }, module{ m } {}
 
 		void compile();
@@ -411,7 +409,7 @@ namespace WASM {
 
 		void throwCompilationError(const char*) const;
 
-		const Interpreter& interpreter;
+		Interpreter& interpreter;
 		Module& module;
 
 		Buffer printedBytecode;

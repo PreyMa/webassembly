@@ -74,6 +74,7 @@ namespace WASM {
 		void attachIntrospector(std::unique_ptr<Introspector>);
 
 	private:
+		friend class Module;
 		friend class ModuleLinker;
 		friend class ModuleCompiler;
 
@@ -88,24 +89,32 @@ namespace WASM {
 		ValuePack runInterpreterLoop(const BytecodeFunction&, std::span<Value>);
 
 		Nullable<Function> findFunction(const std::string&, const std::string&);
-		InterpreterTypeIndex indexOfInterpreterFunctionType(FunctionType&) const;
+		InterpreterTypeIndex indexOfFunctionType(const FunctionType&) const;
+		InterpreterFunctionIndex indexOfFunction(const BytecodeFunction&) const;
+		InterpreterMemoryIndex indexOfMemoryInstance(const Memory&) const;
 
 		void initState(const BytecodeFunction& function);
-		void saveState(const u8*, u32*, u32*, Module*);
+		void saveState(const u8*, u32*, u32*, Memory*);
 		void dumpStack(std::ostream&) const;
 		std::optional<FunctionLookup> findFunctionByBytecodePointer(const u8*) const;
 
 		std::list<Module> wasmModules;
 		std::list<HostModule> hostModules;
 		std::unordered_map<std::string, NonNull<ModuleBase>> moduleNameMap;
-		SealedVector<FunctionType> functionTypes;
+		SealedVector<FunctionType> allFunctionTypes;
+		SealedVector<BytecodeFunction> allFunctions;
+		SealedVector<FunctionTable> allTables;
+		SealedVector<Memory> allMemories;
+		SealedVector<Global<u32>> allGlobals32;
+		SealedVector<Global<u64>> allGlobals64;
+		SealedVector<LinkedElement> allElements;
 
 		bool hasLinked{ false };
 		bool isInterpreting{ false };
 		std::unique_ptr<u32[]> mStackBase;
 		u32* mStackPointer;
 		u32* mFramePointer;
-		Module* mModulePointer;
+		Memory* mMemoryPointer;
 		const u8* mInstructionPointer;
 
 		std::unique_ptr<Introspector> attachedIntrospector;

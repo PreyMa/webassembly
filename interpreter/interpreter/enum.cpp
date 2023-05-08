@@ -374,7 +374,7 @@ BytecodeArguments Bytecode::arguments() const
 	case Call: return BA::SingleU64SingleU32;
 	case CallIndirect: return BA::DualU32;
 	case CallHost: return BA::SingleU64;
-	case Entry: return BA::SingleU64SingleU32;
+	case Entry: return BA::DualU32;
 	case I32Drop:
 	case I64Drop:
 	case I32Select:

@@ -24,6 +24,17 @@ namespace WASM {
 
 		SealedVector& operator=(SealedVector v) { vector = std::move(v.vector); return *this; }
 
+		operator std::span<T>() { return { vector }; }
+		operator std::span<const T>() const { return { vector }; }
+
+		std::optional<sizeType> indexOfPointer(const T* ptr) const {
+			if (!vector.empty() && (ptr >= vector.data()) && (ptr < vector.data() + vector.size())) {
+				return { ptr - vector.data() };
+			}
+
+			return {};
+		}
+
 	private:
 		std::vector<T> vector;
 	};

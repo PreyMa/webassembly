@@ -38,7 +38,7 @@ void Interpreter::loadModule(std::string path)
 	ModuleValidator validator{ introspector };
 	validator.validate(parser);
 
-	wasmModules.emplace_back(parser.toModule());
+	wasmModules.emplace_back(parser.toModule(*this));
 	auto& module = wasmModules.back();
 	registerModuleName(module);
 }
@@ -69,9 +69,6 @@ void Interpreter::compileAndLinkModules()
 
 	for (auto& module : wasmModules) {
 		auto introspector = Nullable<Introspector>::fromPointer(attachedIntrospector);
-		module.initTables(introspector);
-		module.initGlobals(introspector);
-
 		ModuleCompiler compiler{ *this, module };
 		compiler.compile();
 	}
@@ -149,12 +146,31 @@ Nullable<Function> Interpreter::findFunction(const std::string& moduleName, cons
 	return moduleFind->second->exportedFunctionByName(functionName);
 }
 
-InterpreterTypeIndex Interpreter::indexOfInterpreterFunctionType(FunctionType& funcType) const
+InterpreterTypeIndex Interpreter::indexOfFunctionType(const FunctionType& funcType) const
 {
-	auto beginIt = functionTypes.begin();
-	auto findIt = std::find(beginIt, functionTypes.end(), funcType);
-	assert(findIt != functionTypes.end());
+	auto idx = allFunctionTypes.indexOfPointer(&funcType);
+	if (idx.has_value()) {
+		return InterpreterTypeIndex{ (u32)*idx };
+	}
+
+	auto beginIt = allFunctionTypes.begin();
+	auto findIt = std::find(beginIt, allFunctionTypes.end(), funcType);
+	assert(findIt != allFunctionTypes.end());
 	return InterpreterTypeIndex{ (u32)(findIt - beginIt) };
+}
+
+InterpreterFunctionIndex WASM::Interpreter::indexOfFunction(const BytecodeFunction& function) const
+{
+	auto idx = allFunctions.indexOfPointer(&function);
+	assert(idx.has_value());
+	return InterpreterFunctionIndex{ (u32)*idx };
+}
+
+InterpreterMemoryIndex WASM::Interpreter::indexOfMemoryInstance(const Memory& memory) const
+{
+	auto idx = allMemories.indexOfPointer(&memory);
+	assert(idx.has_value());
+	return InterpreterMemoryIndex{ (u32)*idx };
 }
 
 void Interpreter::initState(const BytecodeFunction& function)
@@ -169,22 +185,22 @@ void Interpreter::initState(const BytecodeFunction& function)
 	mInstructionPointer = function.bytecode().begin();
 	mStackPointer = mStackBase.get();
 	mFramePointer = mStackBase.get();
-	mModulePointer = nullptr;
+	mMemoryPointer = nullptr;
 }
 
-void Interpreter::saveState(const u8* ip, u32* sp, u32* fp, Module* mp)
+void Interpreter::saveState(const u8* ip, u32* sp, u32* fp, Memory* mp)
 {
 	mInstructionPointer = ip;
 	mStackPointer = sp;
 	mFramePointer = fp;
-	mModulePointer = mp;
+	mMemoryPointer = mp;
 }
 
 void Interpreter::dumpStack(std::ostream& out) const
 {
 	auto framePointer = mFramePointer;
 	auto stackPointer = mStackPointer;
-	auto modulePointer = mModulePointer;
+	auto memoryPointer = mMemoryPointer;
 	auto instructionPointer = mInstructionPointer;
 
 	// Count the number of stack frames first
@@ -203,7 +219,7 @@ void Interpreter::dumpStack(std::ostream& out) const
 		auto prevInstructionPointer= *(reinterpret_cast<u8**>(framePointer) + 0);
 		auto prevFramePointer= *(reinterpret_cast<u32**>(framePointer) + 1);
 		auto prevStackPointer= *(reinterpret_cast<u32**>(framePointer) + 2);
-		auto prevModulePointer= *(reinterpret_cast<Module**>(framePointer) + 3);
+		auto prevMemoryPointer = *(reinterpret_cast<Memory**>(framePointer) + 3);
 
 		out << "Frame " << --frameIdx;
 		if (frameIdx == frameCount - 1) {
@@ -213,7 +229,7 @@ void Interpreter::dumpStack(std::ostream& out) const
 			out << " (bottom)";
 		}
 
-		out << " FP: " << framePointer << " SP: " << stackPointer << " MP: " << modulePointer << std::endl;
+		out << " FP: " << framePointer << " SP: " << stackPointer << " MP: " << memoryPointer << std::endl;
 		auto lookup= findFunctionByBytecodePointer(instructionPointer);
 		if (!lookup.has_value()) {
 			out << "Stack corruption error: Unknown function for address: " << (u64)instructionPointer << std::endl;
@@ -223,7 +239,7 @@ void Interpreter::dumpStack(std::ostream& out) const
 		auto bytecodeFunction = lookup->function.asBytecodeFunction();
 		auto functionName = lookup->function.lookupName(lookup->module);
 		if (bytecodeFunction.has_value()) {
-			out << "Function: " << bytecodeFunction->index() << " at " << bytecodeFunction.pointer();
+			out << "Function: " << bytecodeFunction->moduleIndex() << " at " << bytecodeFunction.pointer();
 			if (functionName.has_value()) {
 				out << " (" << *functionName << ")";
 			}
@@ -283,7 +299,7 @@ void Interpreter::dumpStack(std::ostream& out) const
 		instructionPointer = prevInstructionPointer;
 		framePointer = prevFramePointer;
 		stackPointer = prevStackPointer;
-		modulePointer = prevModulePointer;
+		memoryPointer = prevMemoryPointer;
 	}
 
 	out << std::dec;
@@ -310,7 +326,7 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 	const u8* instructionPointer = mInstructionPointer;
 	u32* stackPointer = mStackPointer;
 	u32* framePointer = mFramePointer;
-	Module* modulePointer = mModulePointer;
+	Memory* memoryPointer = mMemoryPointer;
 
 	auto loadOperandU32 = [&]() -> u32 [[msvc::forceinline]] {
 		u32 operand = *reinterpret_cast<const u32*>(instructionPointer);
@@ -365,6 +381,29 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 		*reinterpret_cast<u64*>(stackPointer - offset)= value;
 	};
 
+	auto doBytecodeFunctionCall = [&](BytecodeFunction * callee, u32 stackParameterSection) -> void [[msvc::forceinline]] {
+		auto stackPointerToSave = stackPointer - stackParameterSection;
+		auto newFramePointer = stackPointer;
+
+		if (callee->maxStackHeight() + stackPointer > mStackBase.get() + 4069) {
+			throw std::runtime_error{ "Stack overflow" };
+		}
+
+		pushPtr(instructionPointer);
+		pushPtr(framePointer);
+		pushPtr(stackPointerToSave);
+		pushPtr(memoryPointer);
+
+		// FIXME: This value should not need to be calculated
+		for (u32 i = 0; i != callee->localsSizeInBytes() / 4; i++) {
+			pushU32(0);
+		}
+
+		framePointer = newFramePointer;
+		instructionPointer = callee->bytecode().begin();
+		memoryPointer = nullptr;
+	};
+
 	// Check stack
 	assert(function.maxStackHeight() < 4096);
 
@@ -388,7 +427,7 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 	pushPtr(0x00);
 	pushPtr(0x00);
 	pushPtr(mStackBase.get());
-	pushPtr(modulePointer);
+	pushPtr(memoryPointer);
 
 	u64 opA, opB, opC;
 
@@ -462,7 +501,7 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			instructionPointer = (u8*)loadPtrWithFrameOffset(0);
 			auto oldFramePointer = (u32*)loadPtrWithFrameOffset(1);
 			stackPointer = (u32*)loadPtrWithFrameOffset(2);
-			modulePointer = (Module*)loadPtrWithFrameOffset(3);
+			memoryPointer = (Memory*)loadPtrWithFrameOffset(3);
 			framePointer = oldFramePointer;
 
 			for (i64 i = 0; i != numSlotsToReturn; i++) {
@@ -480,26 +519,7 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 		case BC::Call: {
 			auto callee = (BytecodeFunction*)loadOperandPtr();
 			auto stackParameterSection = loadOperandU32();
-			auto stackPointerToSave = stackPointer - stackParameterSection;
-			auto newFramePointer = stackPointer;
-
-			if (callee->maxStackHeight() + stackPointer > mStackBase.get() + 4069) {
-				throw std::runtime_error{ "Stack overflow" };
-			}
-
-			pushPtr(instructionPointer);
-			pushPtr(framePointer);
-			pushPtr(stackPointerToSave);
-			pushPtr(modulePointer);
-
-			// FIXME: This value should not need to be calculated
-			for (u32 i = 0; i != callee->localsSizeInBytes() / 4; i++) {
-				pushU32(0);
-			}
-
-			framePointer = newFramePointer;
-			instructionPointer = callee->bytecode().begin();
-			modulePointer = nullptr;
+			doBytecodeFunctionCall(callee, stackParameterSection);
 			continue;
 		}
 		case BC::CallIndirect:
@@ -510,7 +530,9 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			continue;
 		}
 		case BC::Entry: {
-			modulePointer = (Module*)loadOperandPtr();
+			auto memoryIdx = loadOperandU32();
+			memoryPointer = &allMemories[memoryIdx];
+
 			auto numLocals = loadOperandU32();
 			while (numLocals-- > 0) {
 				pushU32(0);
@@ -633,11 +655,11 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 		case BC::I64Load32u:
 			break;
 		case BC::I32StoreNear:
-			assert(modulePointer);
+			assert(memoryPointer);
 			opC = *(instructionPointer++);
 			opB = popU32();
 			opA = popU32();
-			*reinterpret_cast<u32*>(modulePointer->memoryWithIndexZero()->pointer(opC + opA)) = opB;
+			*reinterpret_cast<u32*>(memoryPointer->pointer(opC + opA)) = opB;
 			continue;
 		case BC::I64StoreNear:
 		case BC::I32StoreFar:
@@ -649,8 +671,8 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 		case BC::I64Store32:
 			break;
 		case BC::MemorySize: {
-			assert(modulePointer);
-			pushU32(modulePointer->memoryWithIndexZero()->currentSize());
+			assert(memoryPointer);
+			pushU32(memoryPointer->currentSize());
 			continue;
 		}
 		case BC::MemoryGrow:

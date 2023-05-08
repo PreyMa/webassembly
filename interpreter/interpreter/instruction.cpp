@@ -1025,18 +1025,9 @@ bool InstructionType::isMemory() const
 	}
 }
 
-bool InstructionType::requiresModuleInstance() const
+bool InstructionType::requiresMemoryInstance() const
 {
 	switch (value) {
-	case CallIndirect:
-	case TableGet:
-	case TableSet:
-	case TableInit:
-	case ElementDrop:
-	case TableCopy:
-	case TableGrow:
-	case TableSize:
-	case TableFill:
 	case I32Load:
 	case I64Load:
 	case F32Load:
@@ -1063,7 +1054,6 @@ bool InstructionType::requiresModuleInstance() const
 	case MemorySize:
 	case MemoryGrow:
 	case MemoryInit:
-	case DataDrop:
 	case MemoryCopy:
 	case MemoryFill:
 		return true;

@@ -16,10 +16,10 @@ static constexpr inline bool isShortDistance(i32 distance) {
 
 Nullable<const std::string> Function::lookupName(const Module& module) const
 {
-	return module.functionNameByIndex(mIndex);
+	return module.functionNameByIndex(mModuleIndex);
 }
 
-BytecodeFunction::BytecodeFunction(ModuleFunctionIndex idx, ModuleTypeIndex ti, FunctionType& ft, FunctionCode&& c)
+BytecodeFunction::BytecodeFunction(ModuleFunctionIndex idx, ModuleTypeIndex ti, const FunctionType& ft, FunctionCode c)
 	: Function{ idx }, mModuleTypeIndex{ ti }, type{ft}, code{ std::move(c.code) } {
 	uncompressLocalTypes(c.compressedLocalTypes);
 }
@@ -76,10 +76,10 @@ u32 BytecodeFunction::localsSizeInBytes() const
 	return endLocalsByteOffset - beginLocalsByteOffset;
 }
 
-bool BytecodeFunction::requiresModuleInstance() const
+bool BytecodeFunction::requiresMemoryInstance() const
 {
 	for (auto& ins : code) {
-		if (ins.opCode().requiresModuleInstance()) {
+		if (ins.opCode().requiresMemoryInstance()) {
 			return true;
 		}
 	}
@@ -105,7 +105,7 @@ void BytecodeFunction::uncompressLocalTypes(const std::vector<CompressedLocalTyp
 		byteOffset += param.sizeInBytes();
 	}
 
-	// Leave space for return address, stack, frame and module pointer
+	// Leave space for return address, stack, frame and memory pointer
 	byteOffset += SpecialFrameBytes;
 
 	// Decompress and put each local
@@ -216,68 +216,86 @@ sizeType Memory::currentSize() const
 }
 
 Module::Module(
+	Interpreter& i,
 	Buffer b,
 	std::string p,
 	std::string n,
-	std::vector<FunctionType> ft,
-	std::vector<BytecodeFunction> fs,
-	std::vector<FunctionTable> ts,
-	std::optional<Memory> ms,
-	ExportTable ex,
-	std::vector<DeclaredGlobal> gt,
-	std::vector<Global<u32>> g32,
-	std::vector<Global<u64>> g64,
-	std::vector<Element> el,
-	std::optional<ModuleFunctionIndex> sf,
-	std::vector<FunctionImport> imFs,
-	std::vector<TableImport> imTs,
-	std::optional<MemoryImport> imMs,
-	std::vector<GlobalImport> imGs,
-	ParsingState::NameMap fns
+	std::unique_ptr<ParsingState> s,
+	ExportTable e
 )
-	: path{ std::move(p) },
+	: mInterpreter{ i },
+	mPath{ std::move(p) },
 	mName{ std::move(n) },
-	data{ std::move(b) },
-	functions{ std::move(fs) },
-	functionTables{ std::move(ts) },
-	globals32{ std::move(g32) },
-	globals64{ std::move(g64) },
-	ownedMemoryInstance{ std::move(ms) },
-	compilationData{
-		std::make_unique<Module::CompilationData>(
-			std::move(imFs),
-			std::move(imTs),
-			std::move(imMs),
-			std::move(imGs),
-			std::move(gt),
-			std::move(el),
-			std::move(sf),
-			std::move(ft)
-		)
-	},
-	exports{ std::move(ex) },
-	functionNameMap{ std::move(fns) }
+	mData{ std::move(b) },
+	compilationData{ std::move(s) },
+	exports{ std::move(e) }
 {
 	assert(compilationData);
-	numImportedFunctions = compilationData->importedFunctions.size();
-	numImportedTables = compilationData->importedTables.size();
-	numImportedMemories = compilationData->importedMemory.has_value() ? 1 : 0;
-	numImportedGlobals = compilationData->importedGlobals.size();
+	numImportedFunctions = compilationData->importedFunctions().size();
+	numImportedTables = compilationData->importedTableTypes().size();
+	numImportedMemories = compilationData->importedMemoryTypes().size();
+	numImportedGlobals = compilationData->importedGlobalTypes().size();
+
+	functionNameMap = compilationData->releaseFunctionNames();
 }
 
 
-void Module::initTables(Nullable<Introspector> introspector)
+void WASM::Module::createFunctions(ModuleLinker& linker, Nullable<Introspector> introspector)
 {
-	assert(compilationData);
+	auto functionCodes = compilationData->releaseFunctionCodes();
+	auto& functions = compilationData->functions();
+	auto& functionTypes = compilationData->functionTypes();
+	auto& bytecodeFunctions = linker.createFunctions(functions.size());
 
-	std::vector<LinkedElement> linkedElements;
-	linkedElements.reserve(elements.size());
+	mFunctions.init(bytecodeFunctions, functions.size());
 
+	for (u32 i = 0; i != functions.size(); i++) {
+		ModuleFunctionIndex moduleFunctionIdx{ (u32)(i + numImportedFunctions) };
+		auto typeIdx = functions[i];
+		assert(typeIdx < functionTypes.size());
+		auto& funcType = functionTypes[typeIdx.value];
+		auto& funcCode = functionCodes[i];
+		bytecodeFunctions.emplace_back(moduleFunctionIdx, typeIdx, funcType, std::move(funcCode));
+	}
+}
+
+void WASM::Module::createMemory(ModuleLinker& linker, Nullable<Introspector> introspector)
+{
+	auto& memoryTypes = compilationData->memoryTypes();
+	if (!memoryTypes.empty()) {
+		auto& memories = linker.createMemory();
+		mMemoryIndex = InterpreterMemoryIndex{ (u32)memories.size() };
+		
+		memories.emplace_back(ModuleMemoryIndex{ 0 }, memoryTypes[0].limits());
+	}
+}
+
+void Module::createTables(ModuleLinker& linker, Nullable<Introspector> introspector)
+{
+	// Create function table objects
+	auto& tableTypes = compilationData->tableTypes();
+	auto& functionTables = linker.createTables(tableTypes.size());
+
+	mTables.init(functionTables, tableTypes.size());
+
+	for (u32 i = 0; i != tableTypes.size(); i++) {
+		ModuleTableIndex tableIdx{ (u32)(i + numImportedTables) };
+		auto& tableType = tableTypes[i];
+		functionTables.emplace_back(tableIdx, tableType);
+	}
+
+	// Create linked elements
+	auto unlinkedElements = compilationData->releaseElements();
+	auto& linkedElements = linker.createElements(unlinkedElements.size());
+
+	mElements.init(linkedElements, unlinkedElements.size());
+
+	// FIXME: Use the numRemainingElements count
 	sizeType numFunctions = 0;
 	sizeType numElements = 0;
-	numRemainingElements = 0;
-	for (u32 i = 0; i != compilationData->elements.size(); i++) {
-		auto& unlinkedElement = compilationData->elements[i];
+	sizeType numRemainingElements = 0;
+	for (u32 i = 0; i != unlinkedElements.size(); i++) {
+		auto& unlinkedElement = unlinkedElements[i];
 		if (unlinkedElement.mode() != ElementMode::Passive) {
 			numRemainingElements++;
 		}
@@ -297,41 +315,60 @@ void Module::initTables(Nullable<Introspector> introspector)
 	}
 }
 
-void Module::initGlobals(Nullable<Introspector> introspector)
+void Module::createGlobals(ModuleLinker& linker, Nullable<Introspector> introspector)
+{
+	// FIXME: Find something better than this const cast
+	auto& globals = const_cast<std::vector<DeclaredGlobal>&>(compilationData->globals());
+
+	// Count the number of 32bit and 64bit globals, assign relative indices
+	u32 num32BitGlobals = 0;
+	u32 num64BitGlobals = 0;
+	for (auto& global : globals) {
+		auto size = global.valType().sizeInBytes();
+		if (size == 4) {
+			InterpreterGlobalTypedArrayIndex idx{ num32BitGlobals++ };
+			global.setIndexInTypedStorageArray(idx);
+		}
+		else if (size == 8) {
+			InterpreterGlobalTypedArrayIndex idx{ num64BitGlobals++ };
+			global.setIndexInTypedStorageArray(idx);
+		}
+		else {
+			throw ValidationError{ compilationData->path(), "Only globals with 32bits and 64bits are supported" };
+		}
+	}
+
+	// Allocate slots for the globals and init them with 0
+	auto& globals32bit = linker.createGlobals32(num32BitGlobals);
+	mGlobals32.init(globals32bit, num32BitGlobals);
+	globals32bit.insert(globals32bit.end(), num32BitGlobals, {});
+
+	auto& globals64bit = linker.createGlobals64(num64BitGlobals);
+	mGlobals64.init(globals64bit, num64BitGlobals);
+	globals64bit.insert(globals64bit.end(), num64BitGlobals, {});
+}
+
+void WASM::Module::instantiate(ModuleLinker& linker, Nullable<Introspector> introspector)
 {
 	assert(compilationData);
-
-	for (auto& declaredGlobal : compilationData->globalTypes) {
-		auto size = declaredGlobal.valType().sizeInBytes();
-		auto typedIdx = declaredGlobal.indexInTypedStorageArray();
-		assert(size == 4 || size == 8);
-		assert(typedIdx.has_value());
-		auto initValue = declaredGlobal.initExpression().constantUntypedValue(*this);
-		
-		if (size == 4) {
-			globals32[typedIdx->value].set(initValue);
-		}
-		else  {
-			globals64[typedIdx->value].set(initValue);
-		}
-	}
-
-	if (introspector.has_value()) {
-		// introspector->onModuleTableInitialized(*this, numElements, numFunctions);
-	}
+	createFunctions(linker, introspector);
+	createMemory(linker, introspector);
+	createGlobals(linker, introspector);
+	createTables(linker, introspector);
 }
 
 Nullable<Function> Module::functionByIndex(ModuleFunctionIndex idx)
 {
 	if (idx < numImportedFunctions) {
 		if (compilationData) {
-			return compilationData->importedFunctions[idx.value].resolvedFunction();
+			return compilationData->importedFunctions()[idx.value].resolvedFunction();
 		}
 
 		return {};
 	}
 
 	idx -= numImportedFunctions;
+	auto functions = mFunctions.span(mInterpreter->allFunctions);
 	assert(idx < functions.size());
 	return functions[idx.value];
 }
@@ -343,7 +380,7 @@ std::optional<ResolvedGlobal> Module::globalByIndex(ModuleGlobalIndex idx)
 	}
 
 	if (idx < numImportedGlobals) {
-		auto& importedGlobal = compilationData->importedGlobals[idx.value];
+		auto& importedGlobal = compilationData->importedGlobalTypes()[idx.value];
 		auto baseGlobal = importedGlobal.getBase();
 		if (!baseGlobal.has_value()) {
 			return {};
@@ -356,18 +393,20 @@ std::optional<ResolvedGlobal> Module::globalByIndex(ModuleGlobalIndex idx)
 	}
 
 	idx -= numImportedGlobals;
-	assert(idx < compilationData->globalTypes.size());
-	auto& declaredGlobal = compilationData->globalTypes[idx.value];
+	assert(idx < compilationData->globals().size());
+	auto& declaredGlobal = compilationData->globals()[idx.value];
 
 	assert(declaredGlobal.indexInTypedStorageArray().has_value());
 	auto storageIndex = *declaredGlobal.indexInTypedStorageArray();
 
 	auto& globalType = declaredGlobal.type();
 	if (globalType.valType().sizeInBytes() == 4) {
+		auto globals32 = mGlobals32.span(mInterpreter->allGlobals32);
 		assert(storageIndex < globals32.size());
 		return ResolvedGlobal{ globals32[storageIndex.value], globalType };
 	}
 
+	auto globals64 = mGlobals64.span(mInterpreter->allGlobals64);
 	assert(storageIndex < globals64.size());
 	return ResolvedGlobal{ globals64[storageIndex.value], globalType };
 }
@@ -380,35 +419,37 @@ Nullable<Memory> Module::memoryByIndex(ModuleMemoryIndex idx)
 
 	if (numImportedMemories) {
 		if (compilationData) {
-			assert(compilationData->importedMemory.has_value());
-			return compilationData->importedMemory->resolvedMemory();
+			assert(compilationData->importedMemoryTypes().size());
+			return compilationData->importedMemoryTypes().front().resolvedMemory();
 		}
 
 		return {};
 	}
 
-	assert(ownedMemoryInstance.has_value());
-	return *ownedMemoryInstance;
+	assert(mMemoryIndex.has_value());
+	assert(*mMemoryIndex < mInterpreter->allMemories.size());
+	return mInterpreter->allMemories[mMemoryIndex->value];
 }
 
 Nullable<FunctionTable> Module::tableByIndex(ModuleTableIndex idx)
 {
 	if (idx < numImportedTables) {
 		if (compilationData) {
-			return compilationData->importedTables[idx.value].resolvedTable();
+			return compilationData->importedTableTypes()[idx.value].resolvedTable();
 		}
 
 		return {};
 	}
 
 	idx -= numImportedTables;
+	auto functionTables = mTables.span(mInterpreter->allTables);
 	assert(idx < functionTables.size());
 	return functionTables[idx.value];
 }
 
 Nullable<const Function> Module::findFunctionByBytecodePointer(const u8* pointer) const
 {
-	for (auto& func : functions) {
+	for (auto& func : mFunctions.constSpan(mInterpreter->allFunctions)) {
 		if (func.bytecode().hasInRange(pointer)) {
 			return func;
 		}
@@ -565,20 +606,20 @@ void ModuleLinker::link()
 
 	checkModulesLinkStatus();
 
+	instantiateModules();
+
 	buildDeduplicatedFunctionTypeTable();
+
+	storeLinkedItems();
 
 	countDependencyItems();
 
 	for (auto& module : interpreter.wasmModules) {
 		auto& compilationData = *module.compilationData;
-		createDependencyItems(module, compilationData.importedFunctions);
-		createDependencyItems(module, compilationData.importedGlobals);
-		createDependencyItems(module, compilationData.importedTables);
-
-		if (compilationData.importedMemory.has_value()) {
-			std::array<MemoryImport, 1> arr{ *compilationData.importedMemory };
-			createDependencyItems(module, arr);
-		}
+		createDependencyItems(module, compilationData.mutateImportedFunctions());
+		createDependencyItems(module, compilationData.mutateImportedGlobalTypes());
+		createDependencyItems(module, compilationData.mutateImportedTableTypes());
+		createDependencyItems(module, compilationData.mutateImportedMemoryTypes());
 	}
 
 	linkDependencies();
@@ -602,11 +643,64 @@ void ModuleLinker::link()
 	}
 }
 
+void WASM::ModuleLinker::storeLinkedItems()
+{
+	interpreter.allFunctionTypes = std::move(allFunctionTypes);
+	interpreter.allFunctions = std::move(allFunctions);
+	interpreter.allTables = std::move(allTables);
+	interpreter.allMemories = std::move(allMemories);
+	interpreter.allGlobals32 = std::move(allGlobals32);
+	interpreter.allGlobals64 = std::move(allGlobals64);
+	interpreter.allElements = std::move(allElements);
+}
+
+std::vector<BytecodeFunction>& WASM::ModuleLinker::createFunctions(u32 numFunctions)
+{
+	allFunctions.reserve(allFunctions.size() + numFunctions);
+	return allFunctions;
+}
+
+std::vector<FunctionTable>& WASM::ModuleLinker::createTables(u32 numTables)
+{
+	allTables.reserve(allTables.size() + numTables);
+	return allTables;
+}
+
+std::vector<LinkedElement>& WASM::ModuleLinker::createElements(u32 numElements)
+{
+	allElements.reserve(allElements.size() + numElements);
+	return allElements;
+}
+
+std::vector<Memory>& WASM::ModuleLinker::createMemory()
+{
+	return allMemories;
+}
+
+std::vector<Global<u32>>& WASM::ModuleLinker::createGlobals32(u32 numGlobals)
+{
+	allGlobals32.reserve(allGlobals32.size() + numGlobals);
+	return allGlobals32;
+}
+
+std::vector<Global<u64>>& WASM::ModuleLinker::createGlobals64(u32 numGlobals)
+{
+	allGlobals64.reserve(allGlobals64.size() + numGlobals);
+	return allGlobals64;
+}
+
 void ModuleLinker::checkModulesLinkStatus() {
 	for (auto& module : interpreter.wasmModules) {
 		if( !module.needsLinking() ) {
 			throwLinkError(module, "<none>", "Module already linked");
 		}
+	}
+}
+
+void ModuleLinker::instantiateModules()
+{
+	for (auto& module : interpreter.wasmModules) {
+		module.instantiate(*this, introspector);
 	}
 }
 
@@ -626,17 +720,17 @@ void ModuleLinker::initGlobals()
 	// initialized with values after all imorts have been resolved.
 
 	for (auto& module : interpreter.wasmModules) {
-		for (auto& declaredGlobal : module.compilationData->globalTypes) {
+		for (auto& declaredGlobal : module.compilationData->globals()) {
 			auto initValue= declaredGlobal.initExpression().constantUntypedValue(module);
 
 			auto idx = declaredGlobal.indexInTypedStorageArray();
 			assert(idx.has_value());
 
 			if (declaredGlobal.valType().sizeInBytes() == 4) {
-				module.globals32[idx->value].set((u32) initValue);
+				interpreter.allGlobals32[idx->value].set((u32) initValue);
 			}
 			else {
-				module.globals64[idx->value].set(initValue);
+				interpreter.allGlobals64[idx->value].set(initValue);
 			}
 		}
 	}
@@ -650,7 +744,7 @@ void ModuleLinker::linkMemoryInstances()
 	for (auto& module : interpreter.wasmModules) {
 		auto mem = module.memoryByIndex(ModuleMemoryIndex{ 0 });
 		if (mem.has_value()) {
-			module.linkedMemory = mem;
+			module.mLinkedMemory= mem;
 		}
 	}
 }
@@ -658,14 +752,14 @@ void ModuleLinker::linkMemoryInstances()
 void ModuleLinker::linkStartFunctions()
 {
 	for (auto& module : interpreter.wasmModules) {
-		auto idx= module.compilationData->startFunctionIndex;
+		auto idx= module.compilationData->startFunctionIndex();
 		if (idx.has_value()) {
-			auto function= module.mStartFunction = module.functionByIndex(*idx);
+			auto function= module.functionByIndex(*idx);
 			if (!function.has_value()) {
 				throwLinkError(module, "<start-function>", "Could not find module start function");
 			}
 
-			module.mStartFunction = function;
+			module.mLinkedStartFunction = function;
 		}
 	}
 }
@@ -673,18 +767,17 @@ void ModuleLinker::linkStartFunctions()
 void ModuleLinker::buildDeduplicatedFunctionTypeTable()
 {
 	auto& modules = interpreter.wasmModules;
-	std::vector<FunctionType> dedupedFunctionTypes;
-	dedupedFunctionTypes.reserve(modules.front().compilationData->functionTypes.size());
+	allFunctionTypes.reserve(modules.front().compilationData->functionTypes().size());
 
 	const auto insertDedupedFunctionType = [&](const FunctionType& type) {
-		auto findIt = std::find(dedupedFunctionTypes.begin(), dedupedFunctionTypes.end(), type);
-		if (findIt == dedupedFunctionTypes.end()) {
-			dedupedFunctionTypes.emplace_back(type);
+		auto findIt = std::find(allFunctionTypes.begin(), allFunctionTypes.end(), type);
+		if (findIt == allFunctionTypes.end()) {
+			allFunctionTypes.emplace_back(type);
 		}
 	};
 
 	for (auto& module : modules) {
-		auto& types = module.compilationData->functionTypes;
+		auto& types = module.compilationData->functionTypes();
 		for (auto& type : types) {
 			insertDedupedFunctionType(type);
 		}
@@ -697,28 +790,29 @@ void ModuleLinker::buildDeduplicatedFunctionTypeTable()
 	}
 
 	const auto findDedupedFunctionType = [&](const Module& module, ModuleTypeIndex typeIdx) {
-		assert(typeIdx < module.compilationData->functionTypes.size());
-		auto& type = module.compilationData->functionTypes[typeIdx.value];
+		assert(typeIdx < module.compilationData->functionTypes().size());
+		auto& type = module.compilationData->functionTypes()[typeIdx.value];
 
-		auto findIt = std::find(dedupedFunctionTypes.begin(), dedupedFunctionTypes.end(), type);
-		assert(findIt != dedupedFunctionTypes.end());
+		auto findIt = std::find(allFunctionTypes.begin(), allFunctionTypes.end(), type);
+		assert(findIt != allFunctionTypes.end());
 		return findIt;
 	};
 
 	for (auto& module : modules) {
-		for (auto& function : module.functions) {
+		for (auto& function : module.mFunctions.span(allFunctions)) {
 			auto typeIdx = function.moduleBaseTypeIndex();
 			auto findIt = findDedupedFunctionType(module, typeIdx);
 
-			InterpreterTypeIndex interpreterTypeIdx{ (u32)(findIt - dedupedFunctionTypes.begin()) };
+			InterpreterTypeIndex interpreterTypeIdx{ (u32)(findIt - allFunctionTypes.begin()) };
 			function.setLinkedFunctionType( interpreterTypeIdx, *findIt);
 		}
 
-		for (auto& functionImport : module.compilationData->importedFunctions) {
+		auto& functionImports = const_cast<std::vector<FunctionImport>&>(module.compilationData->importedFunctions());
+		for (auto& functionImport : functionImports) {
 			assert(!functionImport.hasInterpreterTypeIndex());
 			auto findIt = findDedupedFunctionType(module, functionImport.moduleTypeIndex());
 
-			InterpreterTypeIndex interpreterTypeIdx{ (u32)(findIt - dedupedFunctionTypes.begin()) };
+			InterpreterTypeIndex interpreterTypeIdx{ (u32)(findIt - allFunctionTypes.begin()) };
 			functionImport.interpreterTypeIndex(interpreterTypeIdx);
 		}
 	}
@@ -727,15 +821,13 @@ void ModuleLinker::buildDeduplicatedFunctionTypeTable()
 		for (auto& functionPair : module.mFunctions) {
 			auto& function = *functionPair.second;
 
-			auto findIt = std::find(dedupedFunctionTypes.begin(), dedupedFunctionTypes.end(), function.functionType());
-			assert(findIt != dedupedFunctionTypes.end());
+			auto findIt = std::find(allFunctionTypes.begin(), allFunctionTypes.end(), function.functionType());
+			assert(findIt != allFunctionTypes.end());
 			
-			InterpreterTypeIndex interpreterTypeIdx{ (u32)(findIt - dedupedFunctionTypes.begin()) };
+			InterpreterTypeIndex interpreterTypeIdx{ (u32)(findIt - allFunctionTypes.begin()) };
 			function.setLinkedFunctionType(interpreterTypeIdx);
 		}
 	}
-
-	interpreter.functionTypes = std::move(dedupedFunctionTypes);
 }
 
 sizeType ModuleLinker::countDependencyItems()
@@ -875,11 +967,11 @@ std::optional<sizeType> ModuleCompiler::LabelTypes::size(const Module& module) c
 	}
 
 	assert(module.compilationData);
-	if (typeIndex >= module.compilationData->functionTypes.size()) {
+	if (typeIndex >= module.compilationData->functionTypes().size()) {
 		return {};
 	}
 
-	auto& functionType = module.compilationData->functionTypes[typeIndex.value];
+	auto& functionType = module.compilationData->functionTypes()[typeIndex.value];
 	if (isParameters()) {
 		return functionType.parameters().size();
 	}
@@ -928,7 +1020,7 @@ void ModuleCompiler::ControlFrame::processAddressPatchRequests(ModuleCompiler& c
 
 void ModuleCompiler::compile()
 {
-	for (auto& function : module.functions) {
+	for (auto& function : module.mFunctions.span(interpreter.allFunctions)) {
 		compileFunction(function);
 	}
 
@@ -952,10 +1044,13 @@ void ModuleCompiler::compileFunction(BytecodeFunction& function)
 
 	// Print entry bytecode if the function has any locals or requires the module instance
 	auto localsSizeInBytes = function.localsSizeInBytes();
-	if (localsSizeInBytes > 0 || function.requiresModuleInstance()) {
+	if (localsSizeInBytes > 0 || function.requiresMemoryInstance()) {
+		auto memory = module.memoryByIndex(ModuleMemoryIndex{ 0 });
+		assert(memory.has_value());
+		auto memoryIdx = interpreter.indexOfMemoryInstance(*memory);
 		assert(localsSizeInBytes % 4 == 0);
 		print(Bytecode::Entry);
-		printPointer(&module);
+		printU32(memoryIdx.value);
 		printU32(localsSizeInBytes / 4);
 	}
 
@@ -975,7 +1070,7 @@ void ModuleCompiler::compileFunction(BytecodeFunction& function)
 
 	auto maybeFunctionName = function.lookupName(module);
 	auto* functionName = maybeFunctionName.has_value() ? maybeFunctionName->c_str() : "<unknown name>";
-	std::cout << "Compiled function " << modName << " :: " << functionName << " (index " << function.index() << ")" << " (max stack height " << maxStackHeightInBytes/4 << " slots)" << std::endl;
+	std::cout << "Compiled function " << modName << " :: " << functionName << " (index " << function.moduleIndex() << ")" << " (max stack height " << maxStackHeightInBytes/4 << " slots)" << std::endl;
 	printBytecode(std::cout);
 
 
@@ -1028,10 +1123,10 @@ void ModuleCompiler::pushValues(const BlockTypeParameters& parameters)
 {
 	if (parameters.has_value()) {
 		assert(module.compilationData);
-		if (*parameters >= module.compilationData->functionTypes.size()) {
+		if (*parameters >= module.compilationData->functionTypes().size()) {
 			throwCompilationError("Block type index references invalid function type");
 		}
-		auto& type = module.compilationData->functionTypes[parameters->value];
+		auto& type = module.compilationData->functionTypes()[parameters->value];
 		pushValues(type.parameters());
 	}
 }
@@ -1040,10 +1135,10 @@ void ModuleCompiler::pushValues(const BlockTypeResults& results)
 {
 	if (results == BlockType::TypeIndex) {
 		assert(module.compilationData);
-		if (results.index >= module.compilationData->functionTypes.size()) {
+		if (results.index >= module.compilationData->functionTypes().size()) {
 			throwCompilationError("Block type index references invalid function type");
 		}
-		auto& type = module.compilationData->functionTypes[results.index.value];
+		auto& type = module.compilationData->functionTypes()[results.index.value];
 		pushValues(type.results());
 		return;
 	}
@@ -1097,10 +1192,10 @@ ResolvedGlobal ModuleCompiler::globalByIndex(ModuleGlobalIndex idx) const
 const FunctionType& ModuleCompiler::blockTypeByIndex(ModuleTypeIndex idx)
 {
 	assert(module.compilationData);
-	if (idx >= module.compilationData->functionTypes.size()) {
+	if (idx >= module.compilationData->functionTypes().size()) {
 		throwCompilationError("Block type index references invalid function type");
 	}
-	return module.compilationData->functionTypes[idx.value];
+	return module.compilationData->functionTypes()[idx.value];
 }
 
 const Memory& ModuleCompiler::memoryByIndex(ModuleMemoryIndex idx)
@@ -1763,11 +1858,12 @@ void ModuleCompiler::compileTableInstruction(Instruction instruction)
 	u32 elementIdx= 0;
 	if (instruction == IT::TableInit) {
 		elementIdx = instruction.elementIndex();
-		if (elementIdx >= module.elements.size()) {
+		auto elements = module.mElements.span(interpreter.allElements);
+		if (elementIdx >= elements.size()) {
 			throwCompilationError("Table init instruction references invalid element");
 		}
 
-		auto element = module.elements[elementIdx];
+		auto element = elements[elementIdx];
 		if (table->type() != element.referenceType()) {
 			throwCompilationError("Table init instruction references element with incompatible type");
 		}
@@ -2059,10 +2155,10 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 
 	case IT::CallIndirect: {
 		auto typeIdx = instruction.functionIndex();
-		if (typeIdx >= module.compilationData->functionTypes.size()) {
+		if (typeIdx >= module.compilationData->functionTypes().size()) {
 			throwCompilationError("Call indirect instruction references invalid function type");
 		}
-		auto& funcType = module.compilationData->functionTypes[typeIdx.value];
+		auto& funcType = module.compilationData->functionTypes()[typeIdx.value];
 
 		auto tableIdx = instruction.callTableIndex();
 		auto table = module.tableByIndex(tableIdx);
@@ -2074,7 +2170,7 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 			throwCompilationError("Call indirect instruction references table that is not function reference type");
 		}
 
-		auto dedupedTypeIdx = interpreter.indexOfInterpreterFunctionType(funcType);
+		auto dedupedTypeIdx = interpreter.indexOfFunctionType(funcType);
 
 		popValue(ValType::I32);
 		popValues(funcType.parameters());
@@ -2266,7 +2362,7 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 
 	case IT::ElementDrop: {
 		auto elementIdx = instruction.elementIndex();
-		if (elementIdx >= module.elements.size()) {
+		if (elementIdx >= module.mElements.size()) {
 			throwCompilationError("Element drop instruction references invalid element index");
 		}
 		print(Bytecode::ElementDrop);
@@ -2337,7 +2433,7 @@ void ModuleCompiler::printBytecode(std::ostream& out)
 void ModuleCompiler::throwCompilationError(const char* msg) const
 {
 	if (currentFunction) {
-		throw CompileError{ std::string{module.name()}, currentFunction->index(), std::string{msg} };
+		throw CompileError{ std::string{module.name()}, currentFunction->moduleIndex(), std::string{msg} };
 	}
 	throw CompileError{ std::string{module.name()}, std::string{msg} };
 }

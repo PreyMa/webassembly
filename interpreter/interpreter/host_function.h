@@ -14,7 +14,7 @@ namespace WASM {
 		virtual const FunctionType& functionType() const final { return mFunctionType; }
 		virtual Nullable<const HostFunctionBase> asHostFunction() const final { return *this; }
 
-		void setIndex(ModuleFunctionIndex idx) { mIndex = idx; }
+		void setIndex(ModuleFunctionIndex midx) { mModuleIndex = midx; }
 		void setLinkedFunctionType(InterpreterTypeIndex idx) { mInterpreterTypeIndex = idx; }
 		void print(std::ostream&) const;
 
@@ -31,7 +31,8 @@ namespace WASM {
 
 		template<typename TLambda>
 		HostFunction(TLambda lambda)
-			: HostFunctionBase{ ModuleFunctionIndex{(u32)-1}, toFunctionType()}, function{std::move(lambda)} {}
+			: HostFunctionBase{ ModuleFunctionIndex{(u32)-1}, toFunctionType()},
+			function{std::move(lambda)} {}
 
 		HostFunction(HostFunction&&) = default;
 

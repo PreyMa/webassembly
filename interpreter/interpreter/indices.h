@@ -1,5 +1,7 @@
 #pragma once
 
+#include <span>
+
 #include "util.h"
 
 namespace WASM {
@@ -26,7 +28,27 @@ namespace WASM {
         TypedIndex operator++(int) { return TypedIndex{ value++ }; }
         TypedIndex operator--(int) { return TypedIndex{ value-- }; }
 
+        using TStorage = T;
         T value;
+    };
+
+    template<typename TIndex, typename TElement>
+    struct IndexSpan {
+        TIndex mBegin{ 0 };
+        TIndex mEnd{ 0 };
+
+        void init(std::span<TElement> current, sizeType newItems) {
+            mBegin = TIndex{ (typename TIndex::TStorage) current.size() };
+            mEnd = mBegin + newItems;
+        }
+
+        sizeType size() const { return mEnd.value - mBegin.value; }
+        std::span<TElement> span(std::span<TElement> sp) const {
+            return sp.subspan(mBegin.value, size());
+        }
+        std::span<const TElement> constSpan(std::span<const TElement> sp) const {
+            return sp.subspan(mBegin.value, size());
+        }
     };
 
     using ModuleTypeIndex= TypedIndex<u32, 0>;
@@ -41,11 +63,12 @@ namespace WASM {
     using InterpreterFunctionIndex = TypedIndex<u32, 11>;
     using InterpreterMemoryIndex = TypedIndex<u32, 12>;
     using InterpreterTableIndex = TypedIndex<u32, 13>;
+    using InterpreterLinkedElementIndex = TypedIndex<u32, 15>;
 
     using LocalFunctionIndex = TypedIndex<u32, 20>;             // References a local function in a module disregarding any imported functions
 
-    using ModuleGlobalTypedArrayIndex = TypedIndex<u32, 21>;    // References a global either in a vector<u32> or vector<u64> depending on the global's type
-    using ModuleExportIndex = TypedIndex<u32, 22>;              // References either an exported function, table, memory or global by its module index, based on the export's type
+    using InterpreterGlobalTypedArrayIndex = TypedIndex<u32, 21>;   // References a global either in a vector<u32> or vector<u64> depending on the global's type
+    using ModuleExportIndex = TypedIndex<u32, 22>;                  // References either an exported function, table, memory or global by its module index, based on the export's type
 }
 
 // Allow for stream printing eg. std::cout
