@@ -40,6 +40,7 @@ namespace WASM {
 
 	class FunctionType {
 	public:
+		FunctionType();
 		FunctionType(std::span<const ValType>, std::span<const ValType>);
 		FunctionType(const FunctionType&);
 		FunctionType(FunctionType&&) = default;

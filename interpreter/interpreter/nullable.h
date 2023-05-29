@@ -54,6 +54,7 @@ namespace WASM {
 	template<typename T>
 	class NonNull {
 	public:
+		NonNull() = delete;
 		NonNull(const NonNull&) = default;
 
 		NonNull(T& x) : ptr{ &x } {};

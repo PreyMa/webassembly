@@ -803,6 +803,9 @@ FunctionCode ModuleParser::parseFunctionCode()
 	return { Expression{codeSlice, instructions}, std::move(locals) };
 }
 
+FunctionType::FunctionType()
+	: storage{ LocalArray{.numParameters = 0, .numResults = 0} } {}
+
 FunctionType::FunctionType(std::span<const ValType> parameters, std::span<const ValType> results)
 	: storage{ LocalArray{.numParameters = 0, .numResults = 0} } {
 

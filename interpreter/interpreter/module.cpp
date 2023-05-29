@@ -778,6 +778,8 @@ void ModuleLinker::buildDeduplicatedFunctionTypeTable()
 		return InterpreterTypeIndex{ (u32)(findIt - allFunctionTypes.begin()) };
 	};
 
+	FunctionType placeholderVoidType;
+
 	std::vector<InterpreterTypeIndex> typeMap;
 	for (auto& module : modules) {
 		auto& types = module.compilationData->functionTypes();
@@ -794,10 +796,13 @@ void ModuleLinker::buildDeduplicatedFunctionTypeTable()
 		for (auto& function : module.mFunctions.span(allFunctions)) {
 			auto moduleTypeIdx = function.moduleTypeIndex();
 
+			// Only set the placeholder void type for now, as the 'allFunctionTypes' vector may
+			// reallocate on subsequent calls to 'insertDedupedFunctionType'. The addresses are
+			// patched in the following loop after host module types were inserted as well
 			assert(moduleTypeIdx < typeMap.size());
 			auto interpreterTypeIdx = typeMap[moduleTypeIdx.value];
 			assert(interpreterTypeIdx < allFunctionTypes.size());
-			function.setLinkedFunctionType(interpreterTypeIdx, allFunctionTypes[interpreterTypeIdx.value]);
+			function.setLinkedFunctionType(interpreterTypeIdx, placeholderVoidType);
 		}
 
 		auto& functionImports = module.compilationData->mutateImportedFunctions();
@@ -819,6 +824,13 @@ void ModuleLinker::buildDeduplicatedFunctionTypeTable()
 
 			function.setLinkedFunctionType(interpreterTypeIdx);
 		}
+	}
+
+	// Patch the addresses to the function types based on their interpreter type index,
+	// now that 'allFunctionTypes' will not change any more
+	for (auto& function : allFunctions) {
+		auto interpreterTypeIdx = function.interpreterTypeIndex();
+		function.setLinkedFunctionType(interpreterTypeIdx, allFunctionTypes[interpreterTypeIdx.value]);
 	}
 }
 
