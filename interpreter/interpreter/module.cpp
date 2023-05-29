@@ -144,15 +144,22 @@ i32 FunctionTable::grow(i32 increase, Nullable<Function> item)
 
 void FunctionTable::init(const LinkedElement& element, u32 tableOffset, u32 elementOffset, u32 numItems)
 {
+	// https://webassembly.github.io/spec/core/exec/instructions.html#xref-syntax-instructions-syntax-instr-table-mathsf-table-init-x-y
+
 	if (!numItems) {
 		return;
 	}
 
 	auto& refs = element.references();
-	assert(elementOffset + numItems < refs.size());
-	auto readIt = refs.begin() + elementOffset;
+	if (elementOffset + numItems > refs.size()) {
+		throw std::runtime_error{ "Invalid table init: Element access out of bounds" };
+	}
 
-	assert(tableOffset + numItems < table.size());
+	if (tableOffset + numItems > table.size()) {
+		throw std::runtime_error{ "Invalid table init: Table row access out of bounds" };
+	}
+	
+	auto readIt = refs.begin() + elementOffset;
 	auto writeIt = table.begin() + tableOffset;
 
 	for (u32 i = 0; i != numItems; i++) {
@@ -270,9 +277,11 @@ void WASM::Module::createMemory(ModuleLinker& linker, Nullable<Introspector> int
 	}
 }
 
-void Module::createTables(ModuleLinker& linker, Nullable<Introspector> introspector)
+void Module::createTables(ModuleLinker& linker, Nullable<Introspector>)
 {
 	// Create function table objects
+	// Creating elements and populating tables has to be done separately after
+	// imports were resolved and linked items were transferred to the interpreter
 	auto& tableTypes = compilationData->tableTypes();
 	auto& functionTables = linker.createTables(tableTypes.size());
 
@@ -283,8 +292,12 @@ void Module::createTables(ModuleLinker& linker, Nullable<Introspector> introspec
 		auto& tableType = tableTypes[i];
 		functionTables.emplace_back(tableIdx, tableType);
 	}
+}
 
+void Module::createElementsAndInitTables(ModuleLinker& linker, Nullable<Introspector> introspector)
+{
 	// Create linked elements
+	auto moduleTables = mTables.span(mInterpreter->allTables);
 	auto unlinkedElements = compilationData->releaseElements();
 	auto& linkedElements = linker.createElements(unlinkedElements.size());
 
@@ -302,7 +315,7 @@ void Module::createTables(ModuleLinker& linker, Nullable<Introspector> introspec
 
 		ModuleElementIndex elemIdx{ i };
 		linkedElements.emplace_back(unlinkedElement.decodeAndLink(elemIdx, *this));
-		auto initCount= linkedElements.back().initTableIfActive( functionTables );
+		auto initCount = linkedElements.back().initTableIfActive(moduleTables);
 
 		if (initCount > 0) {
 			numFunctions += initCount;
@@ -635,6 +648,7 @@ void ModuleLinker::link()
 	linkDependencies();
 
 	initGlobals();
+	initTables();
 	linkMemoryInstances();
 	linkStartFunctions();
 
@@ -743,6 +757,16 @@ void ModuleLinker::initGlobals()
 				interpreter.allGlobals64[idx->value].set(initValue);
 			}
 		}
+	}
+}
+
+void ModuleLinker::initTables()
+{
+	// Table elements might reference imported functions and therefore
+	// can only be populated after resolving imports
+
+	for (auto& module : interpreter.wasmModules) {
+		module.createElementsAndInitTables(*this, introspector);
 	}
 }
 

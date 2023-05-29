@@ -224,6 +224,7 @@ namespace WASM {
 		void createMemory(ModuleLinker&, Nullable<Introspector>);
 		void createTables(ModuleLinker&, Nullable<Introspector>);
 		void createGlobals(ModuleLinker&, Nullable<Introspector>);
+		void createElementsAndInitTables(ModuleLinker&, Nullable<Introspector>);
 
 		std::string mPath;
 		std::string mName;
@@ -282,6 +283,7 @@ namespace WASM {
 		void linkDependencies();
 		void addDepenencyItem(DependencyItem);
 		void initGlobals();
+		void initTables();
 		void linkMemoryInstances();
 		void linkStartFunctions();
 
