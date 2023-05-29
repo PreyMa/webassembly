@@ -447,6 +447,16 @@ Nullable<FunctionTable> Module::tableByIndex(ModuleTableIndex idx)
 	return functionTables[idx.value];
 }
 
+Nullable<LinkedElement> WASM::Module::linkedElementByIndex(Interpreter& interpreter, ModuleElementIndex idx)
+{
+	auto elements = mElements.span(interpreter.allElements);
+	if (idx >= elements.size()) {
+		return {};
+	}
+
+	return elements[idx.value];
+}
+
 Nullable<const Function> Module::findFunctionByBytecodePointer(const u8* pointer) const
 {
 	for (auto& func : mFunctions.constSpan(mInterpreter->allFunctions)) {
@@ -1839,17 +1849,19 @@ void ModuleCompiler::compileBranchTableInstruction(Instruction instruction)
 
 void ModuleCompiler::compileTableInstruction(Instruction instruction)
 {
-	auto tableIdx = instruction.tableIndex();
-	auto table = module.tableByIndex(tableIdx);
+	auto moduleTableIdx = instruction.tableIndex();
+	auto table = module.tableByIndex(moduleTableIdx);
 	if (!table.has_value()) {
 		throwCompilationError("Table instruction references invalid table index");
 	}
 
+	auto interpreterTableIdx = interpreter.indexOfTableInstance(*table);
+
 	using IT = InstructionType;
-	u32 sourceTableIdx= 0;
+	InterpreterTableIndex interpreterSourceTableIdx{ 0 };
 	if (instruction == IT::TableCopy) {
-		sourceTableIdx = instruction.sourceTableIndex();
-		auto sourceTable = module.tableByIndex(tableIdx);
+		auto moduleSourceTableIdx = instruction.sourceTableIndex();
+		auto sourceTable = module.tableByIndex(moduleSourceTableIdx);
 		if (!sourceTable.has_value()) {
 			throwCompilationError("Table instruction references invalid source table index");
 		}
@@ -1857,26 +1869,29 @@ void ModuleCompiler::compileTableInstruction(Instruction instruction)
 		if (table->type() != sourceTable->type()) {
 			throwCompilationError("Table copy instruction references tables with incompatible types");
 		}
+
+		interpreterSourceTableIdx = interpreter.indexOfTableInstance(*sourceTable);
 	}
 
-	u32 elementIdx= 0;
+	InterpreterLinkedElementIndex interpreterElementIdx{ 0 };
 	if (instruction == IT::TableInit) {
-		elementIdx = instruction.elementIndex();
-		auto elements = module.mElements.span(interpreter.allElements);
-		if (elementIdx >= elements.size()) {
+		auto moduleElementIdx = instruction.elementIndex();
+		auto linkedElement = module.linkedElementByIndex(interpreter, moduleElementIdx);
+		if (!linkedElement.has_value()) {
 			throwCompilationError("Table init instruction references invalid element");
 		}
 
-		auto element = elements[elementIdx];
-		if (table->type() != element.referenceType()) {
+		if (table->type() != linkedElement->referenceType()) {
 			throwCompilationError("Table init instruction references element with incompatible type");
 		}
+
+		interpreterElementIdx = interpreter.indexOfLinkedElement(*linkedElement);
 	}
 
 	auto bytecode = instruction.toBytecode();
 	assert(bytecode.has_value());
 	print(*bytecode);
-	printU32(tableIdx.value);
+	printU32(interpreterTableIdx.value);
 
 	auto type = table->type();
 	switch (instruction.opCode()) {
@@ -1906,10 +1921,10 @@ void ModuleCompiler::compileTableInstruction(Instruction instruction)
 		popValue(ValType::I32);
 		popValue(ValType::I32);
 
-		printU32(sourceTableIdx);
+		printU32(interpreterSourceTableIdx.value);
 		break;
 	case IT::TableInit:
-		printU32(elementIdx);
+		printU32(interpreterElementIdx.value);
 		break;
 	}
 }
@@ -2164,8 +2179,8 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 		}
 		auto& funcType = module.compilationData->functionTypes()[typeIdx.value];
 
-		auto tableIdx = instruction.callTableIndex();
-		auto table = module.tableByIndex(tableIdx);
+		auto moduleTableIdx = instruction.callTableIndex();
+		auto table = module.tableByIndex(moduleTableIdx);
 		if (!table.has_value()) {
 			throwCompilationError("Call indirect instruction references invalid table index");
 		}
@@ -2174,15 +2189,16 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 			throwCompilationError("Call indirect instruction references table that is not function reference type");
 		}
 
-		auto dedupedTypeIdx = interpreter.indexOfFunctionType(funcType);
+		auto interpreterTypeIdx = interpreter.indexOfFunctionType(funcType);
+		auto interpreterTableIdx = interpreter.indexOfTableInstance(*table);
 
 		popValue(ValType::I32);
 		popValues(funcType.parameters());
 		pushValues(funcType.results());
 
 		print(Bytecode::CallIndirect);
-		printU32(tableIdx.value);
-		printU32(dedupedTypeIdx.value);
+		printU32(interpreterTableIdx.value);
+		printU32(interpreterTypeIdx.value);
 		return;
 	}
 
@@ -2365,12 +2381,15 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 		return;
 
 	case IT::ElementDrop: {
-		auto elementIdx = instruction.elementIndex();
-		if (elementIdx >= module.mElements.size()) {
+		auto moduleElementIdx = instruction.elementIndex();
+		auto element = module.linkedElementByIndex(interpreter, moduleElementIdx);
+		if (!element.has_value()) {
 			throwCompilationError("Element drop instruction references invalid element index");
 		}
+		auto interpreterElementIdx = interpreter.indexOfLinkedElement(*element);
+
 		print(Bytecode::ElementDrop);
-		printU32(elementIdx);
+		printU32(interpreterElementIdx.value);
 		return;
 	}
 	}

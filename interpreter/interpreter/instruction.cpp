@@ -1801,10 +1801,10 @@ ModuleTableIndex Instruction::callTableIndex() const
 	return ModuleTableIndex{ operandB };
 }
 
-u32 Instruction::elementIndex() const
+ModuleElementIndex Instruction::elementIndex() const
 {
 	assert(type == InstructionType::TableInit || type == InstructionType::ElementDrop);
-	return operandB;
+	return ModuleElementIndex{ operandB };
 }
 
 ModuleTableIndex Instruction::tableIndex() const
@@ -1813,10 +1813,10 @@ ModuleTableIndex Instruction::tableIndex() const
 	return ModuleTableIndex{ operandA };
 }
 
-u32 WASM::Instruction::sourceTableIndex() const
+ModuleTableIndex WASM::Instruction::sourceTableIndex() const
 {
 	assert(type == InstructionType::TableCopy);
-	return operandB;
+	return ModuleTableIndex{ operandB };
 }
 
 i32 Instruction::asI32Constant() const

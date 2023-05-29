@@ -173,6 +173,20 @@ InterpreterMemoryIndex WASM::Interpreter::indexOfMemoryInstance(const Memory& me
 	return InterpreterMemoryIndex{ (u32)*idx };
 }
 
+InterpreterTableIndex WASM::Interpreter::indexOfTableInstance(const FunctionTable& table)
+{
+	auto idx = allTables.indexOfPointer(&table);
+	assert(idx.has_value());
+	return InterpreterTableIndex{ (u32)*idx };
+}
+
+InterpreterLinkedElementIndex WASM::Interpreter::indexOfLinkedElement(const LinkedElement& elem)
+{
+	auto idx = allElements.indexOfPointer(&elem);
+	assert(idx.has_value());
+	return InterpreterLinkedElementIndex{ (u32)*idx };
+}
+
 void Interpreter::initState(const BytecodeFunction& function)
 {
 	if (mStackBase) {

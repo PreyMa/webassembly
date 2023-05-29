@@ -203,6 +203,7 @@ namespace WASM {
 		std::optional<ResolvedGlobal> globalByIndex(ModuleGlobalIndex);
 		Nullable<Memory> memoryByIndex(ModuleMemoryIndex);
 		Nullable<FunctionTable> tableByIndex(ModuleTableIndex);
+		Nullable<LinkedElement> linkedElementByIndex(Interpreter&, ModuleElementIndex);
 		Nullable<Function> startFunction() const { return mLinkedStartFunction; }
 		Nullable<Memory> memoryWithIndexZero() const { return mLinkedMemory; }
 
