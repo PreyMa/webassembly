@@ -1430,11 +1430,16 @@ void ModuleValidator::validateElementSegment(const Element& elem)
 		// The current context C' does not have any tables defined. Or does it?
 
 		auto tableIdx = elem.tableIndex();
-		if (tableIdx >= s().tableTypes().size()) {
+		auto numImportedTables = s().importedTableTypes().size();
+		if (tableIdx >= s().tableTypes().size()+ numImportedTables) {
 			throwValidationError("Element segment references invalid table index");
 		}
 
-		auto& table = s().tableTypes()[tableIdx.value];
+		if (tableIdx < numImportedTables) {
+			throw std::runtime_error{ "Element segments referencing imported table types are currently not supported." };
+		}
+
+		auto& table = s().tableTypes()[tableIdx.value - numImportedTables];
 		if (table.valType() != elem.valType()) {
 			throwValidationError("Element segment type missmatch with reference table");
 		}
