@@ -143,12 +143,19 @@ std::string BufferSlice::toString()
 	return std::string{ (char*)mBegin, mLength };
 }
 
-void BufferSlice::print(std::ostream& out) const
+void BufferSlice::print(std::ostream& out, sizeType maxNumToPrint) const
 {
 	out << "[" << std::hex;
 
-	for (auto byte : *this) {
+	auto len= mLength < maxNumToPrint ? mLength : maxNumToPrint;
+
+	for (sizeType i = 0; i != len; i++) {
+		auto byte = mBegin[i];
 		out << " " << (byte <= 0xF ? "0" : "") << (int)byte;
+	}
+
+	if (len < mLength) {
+		out << "...";
 	}
 
 	out << " ]" << std::dec;

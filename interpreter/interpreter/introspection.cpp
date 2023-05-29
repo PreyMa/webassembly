@@ -251,6 +251,28 @@ void DebugLogger::onParsingImportSection(
 	}
 }
 
+void WASM::DebugLogger::onParsingDataCountSection(u32 count)
+{
+	if (doLoggingWhenParsing()) {
+		outStream() << "-> Parsed data count section expecting " << count << " data sections in this module" << std::endl;
+	}
+}
+
+void WASM::DebugLogger::onParsingDataSection(std::span<DataItem> dataItems)
+{
+	if (doLoggingWhenParsing()) {
+		auto& stream = outStream();
+		stream << "-> Parsed data section containing " << dataItems.size() << " data items" << std::endl;
+
+		u32 i = 0;
+		for (auto& item : dataItems) {
+			stream << "  - " << i++ << " ";
+			item.print(stream);
+			stream << std::endl;
+		}
+	}
+}
+
 void DebugLogger::onModuleValidationStart()
 {
 	isValidatingImports = false;
@@ -336,6 +358,16 @@ void DebugLogger::onValidatingElement(const Element& element)
 		auto& stream = outStream();
 		stream << "Validated element segment ";
 		element.print(stream);
+		stream << std::endl;
+	}
+}
+
+void WASM::DebugLogger::onValidatingDataItem(const DataItem& item)
+{
+	if (doLoggingWhenValidating()) {
+		auto& stream = outStream();
+		stream << "Validated data item";
+		item.print(stream, false);
 		stream << std::endl;
 	}
 }

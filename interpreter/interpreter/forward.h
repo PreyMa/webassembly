@@ -19,6 +19,7 @@ namespace WASM {
 	class DeclaredGlobal;
 	class Export;
 	class Element;
+	class DataItem;
 	class FunctionCode;
 
 	class ParsingState;
@@ -29,6 +30,7 @@ namespace WASM {
 	class ValType;
 	class ExportType;
 	class ElementMode;
+	class DataItemMode;
 	class NameSubsectionType;
 	class BlockType;
 

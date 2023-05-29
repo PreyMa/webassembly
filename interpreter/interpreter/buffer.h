@@ -135,7 +135,7 @@ namespace WASM {
 
 
 		std::string toString();
-		void print(std::ostream&) const;
+		void print(std::ostream&, sizeType= -1) const;
 
 	private:
 		u8* mBegin;

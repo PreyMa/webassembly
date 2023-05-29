@@ -120,6 +120,8 @@ void ModuleParser::parseSection()
 	case SectionType::Start: parseStartSection(); break;
 	case SectionType::Element: parseElementSection(); break;
 	case SectionType::Code: parseCodeSection(); break;
+	case SectionType::Data: parseDataSection(); break;
+	case SectionType::DataCount: parseDataCountSection(); break;
 	default:
 		if (introspector.has_value()) {
 			introspector->onSkippingUnrecognizedSection(type, length);
@@ -354,6 +356,40 @@ void ModuleParser::parseCodeSection()
 
 	if (introspector.has_value()) {
 		introspector->onParsingCodeSection(mFunctionCodes);
+	}
+}
+
+void ModuleParser::parseDataSection() {
+	// The data section consists of a single vector of "datas" / data items
+	// https://webassembly.github.io/spec/core/binary/modules.html#data-section
+
+	auto numDatas = nextU32();
+	mDataItems.reserve(mDataItems.size() + numDatas);
+	for (u32 i = 0; i != numDatas; i++) {
+		auto element = parseDataItem();
+		mDataItems.emplace_back(std::move(element));
+	}
+
+	if (introspector.has_value()) {
+		introspector->onParsingDataSection(mDataItems);
+	}
+}
+
+void ModuleParser::parseDataCountSection() {
+	// The data count section is optional and only holds a single integer indicating
+	// how many data sections to expect after the code section.
+	// Note: Module decoding and validation are split into separate phases, so the
+	// value is not usefull, but it still should be checked.
+	// https://webassembly.github.io/spec/core/binary/modules.html#data-count-section
+
+	if (!hasNext(1)) {
+		throwParsingError("Expected at least a single byte value in data count section");
+	}
+
+	mExpectedDataSectionCount = nextU32();
+
+	if (introspector.has_value()) {
+		introspector->onParsingDataCountSection(*mExpectedDataSectionCount);
 	}
 }
 
@@ -648,6 +684,12 @@ std::vector<ModuleFunctionIndex> ModuleParser::parseU32Vector()
 	return ints;
 }
 
+BufferSlice WASM::ModuleParser::parseU8Vector()
+{
+	auto numBytes = nextU32();
+	return nextSliceOf(numBytes);
+}
+
 void ModuleParser::throwParsingError(const char* msg) const
 {
 	throw ParsingError{ static_cast<u64>(mIt.positionPointer() - mData.begin()), mPath, std::string{msg} };
@@ -801,6 +843,40 @@ FunctionCode ModuleParser::parseFunctionCode()
 	}
 
 	return { Expression{codeSlice, instructions}, std::move(locals) };
+}
+
+DataItem WASM::ModuleParser::parseDataItem()
+{
+	// A data item might be passive or active. Active items have a constant
+	// expression returning a memory offset. Optionally they might have an
+	// explicit memory index, the default is 0. Every kind of data item ends with
+	// a vector of bytes which contain the actual data.
+	// https://webassembly.github.io/spec/core/binary/modules.html#data-section
+
+	if (!hasNext(2)) {
+		throwParsingError("Too little bytes to decode data item");
+	}
+
+	auto bitfield = nextU32();
+	switch (bitfield) {
+	case 0: {
+		auto offsetExpression = parseInitExpression();
+		auto bytes = parseU8Vector();
+		return DataItem{ DataItemMode::Active, std::move(bytes), ModuleMemoryIndex{0}, std::move(offsetExpression)};
+	}
+	case 1: {
+		auto bytes = parseU8Vector();
+		return DataItem{ DataItemMode::Passive, std::move(bytes) };
+	}
+	case 2: {
+		auto memoryIdx = nextU32();
+		auto offsetExpression = parseInitExpression();
+		auto bytes = parseU8Vector();
+		return DataItem{ DataItemMode::Active, std::move(bytes), ModuleMemoryIndex{ memoryIdx }, std::move(offsetExpression) };
+	}
+	default:
+		throwParsingError("Invalid data item bitfield");
+	}
 }
 
 FunctionType::FunctionType()
@@ -1260,7 +1336,15 @@ void ModuleValidator::validate(const ParsingState& parser)
 		validateElementSegment(elem);
 	}
 
-	// TODO: Validate data segments
+	if (s().expectedDataSectionCount().has_value()) {
+		if (s().expectedDataSectionCount() != s().dataItems().size()) {
+			throwValidationError("Number of data sections does not match the value declared by the data section count segment");
+		}
+	}
+
+	for (auto& dat : s().dataItems()) {
+		validateDataItem(dat);
+	}
 
 	if (introspector.has_value()) {
 		introspector->onModuleValidationFinished();
@@ -1487,6 +1571,31 @@ void ModuleValidator::validateImports()
 	}
 }
 
+void ModuleValidator::validateDataItem(const DataItem& dataItem)
+{
+	// Passive data items are always valid. Active data items need to have a
+	// valid constant expression as memory offset. The memory index may only be 0.
+	// https://webassembly.github.io/spec/core/valid/modules.html#data-segments
+
+	if (dataItem.mode() == DataItemMode::Passive) {
+		return;
+	}
+
+	auto& memoryPosition = dataItem.memoryPosition();
+	assert(memoryPosition.has_value());
+
+	auto numMemories = s().memoryTypes().size() + s().importedMemoryTypes().size();
+	if (memoryPosition->mMemoryIndex >= numMemories) {
+		throwValidationError("Data item references invalid memory index");
+	}
+
+	validateConstantExpression(memoryPosition->mOffsetExpression, ValType::I32);
+
+	if (introspector.has_value()) {
+		introspector->onValidatingDataItem(dataItem);
+	}
+}
+
 void ModuleValidator::validateConstantExpression(const Expression& exp, ValType expectedType)
 {
 	// For an expression to be constant and valid, all of its instruction have to be constant.
@@ -1546,6 +1655,8 @@ void ParsingState::clear()
 	mName.clear();
 	mFunctionNames.clear();
 	mFunctionLocalNames.clear();
+	mExpectedDataSectionCount.reset();
+	mDataItems.clear();
 }
 
 Nullable<const GlobalBase> GlobalImport::getBase() const
@@ -1764,4 +1875,18 @@ ModuleTableIndex WASM::ExportItem::asTableIndex() const
 {
 	assert(mExportType == ExportType::TableIndex);
 	return ModuleTableIndex{ mIndex.value };
+}
+
+void DataItem::print(std::ostream& out, bool showData) const
+{
+	out << "DataItem: " << mMode.name();
+	if (mMemoryPosition.has_value()) {
+		out << " memory: " << mMemoryPosition->mMemoryIndex << " offset: ";
+		mMemoryPosition->mOffsetExpression.printBytes(out);
+	}
+
+	if (showData) {
+		out << std::endl << "    data (" << mDataBytes.size() << " bytes): ";
+		mDataBytes.print(out, 100);
+	}
 }

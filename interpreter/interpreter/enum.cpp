@@ -637,3 +637,12 @@ const char* ImportType::name() const
 		default: return "<unknown import type>";
 	}
 }
+
+const char* WASM::DataItemMode::name() const
+{
+	switch (value) {
+		case Active: return "Active";
+		case Passive: return "Passive";
+		default: return "<unknown data item mode>";
+	}
+}

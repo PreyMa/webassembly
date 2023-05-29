@@ -31,6 +31,8 @@ namespace WASM {
 		virtual void onParsingElementSection(std::span<Element>) = 0;
 		virtual void onParsingCodeSection(std::span<FunctionCode>) = 0;
 		virtual void onParsingImportSection(std::span<FunctionImport>, std::span<TableImport>, std::span<MemoryImport>, std::span<GlobalImport>) = 0;
+		virtual void onParsingDataCountSection(u32) = 0;
+		virtual void onParsingDataSection(std::span<DataItem>) = 0;
 
 		virtual void onModuleValidationStart() = 0;
 		virtual void onModuleValidationFinished() = 0;
@@ -43,6 +45,7 @@ namespace WASM {
 		virtual void onValidatingStartFunction(ModuleFunctionIndex) = 0;
 		virtual void onValidatingGlobal(const DeclaredGlobal&) = 0;
 		virtual void onValidatingElement(const Element&) = 0;
+		virtual void onValidatingDataItem(const DataItem&) = 0;
 
 		virtual void onModuleLinkingStart() = 0;
 		virtual void onModuleLinkingFinished() = 0;
@@ -71,6 +74,8 @@ namespace WASM {
 		virtual void onParsingElementSection(std::span<Element>) override;
 		virtual void onParsingCodeSection(std::span<FunctionCode>) override;
 		virtual void onParsingImportSection(std::span<FunctionImport>, std::span<TableImport>, std::span<MemoryImport>, std::span<GlobalImport>) override;
+		virtual void onParsingDataCountSection(u32) override;
+		virtual void onParsingDataSection(std::span<DataItem>) override;
 
 		virtual void onModuleValidationStart() override;
 		virtual void onModuleValidationFinished() override;
@@ -83,6 +88,7 @@ namespace WASM {
 		virtual void onValidatingStartFunction(ModuleFunctionIndex) override;
 		virtual void onValidatingGlobal(const DeclaredGlobal&) override;
 		virtual void onValidatingElement(const Element&) override;
+		virtual void onValidatingDataItem(const DataItem&) override;
 
 		virtual void onModuleLinkingStart() override;
 		virtual void onModuleLinkingFinished() override;

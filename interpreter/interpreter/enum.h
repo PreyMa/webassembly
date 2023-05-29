@@ -119,6 +119,20 @@ namespace WASM {
 		const char* name() const;
 	};
 
+	class DataItemMode : public Enum<DataItemMode> {
+	public:
+		enum TEnum {
+			Active = 0,
+			Passive = 1,
+			NumberOfItems
+		};
+
+		using Enum<DataItemMode>::Enum;
+		DataItemMode(TEnum e) : Enum<DataItemMode>{ e } {}
+
+		const char* name() const;
+	};
+
 	class NameSubsectionType : public Enum<NameSubsectionType> {
 	public:
 		enum TEnum {

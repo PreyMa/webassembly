@@ -234,6 +234,30 @@ namespace WASM {
 		std::variant<std::vector<ModuleFunctionIndex>, std::vector<Expression>> mInitExpressions;
 	};
 
+	class DataItem {
+	public:
+		struct MemoryPosition {
+			ModuleMemoryIndex mMemoryIndex;
+			Expression mOffsetExpression;
+		};
+
+		DataItem(DataItemMode m, BufferSlice b, ModuleMemoryIndex i, Expression e)
+			: mMode{ m }, mDataBytes{ std::move(b) }, mMemoryPosition{ MemoryPosition{ i, std::move(e) } } {}
+
+		DataItem(DataItemMode m, BufferSlice b)
+			: mMode{ m }, mDataBytes{ std::move(b) } {}
+
+		auto mode() const { return mMode; }
+		const auto& memoryPosition() const { return mMemoryPosition; }
+
+		void print(std::ostream&, bool showData= true) const;
+
+	private:
+		DataItemMode mMode;
+		BufferSlice mDataBytes;
+		std::optional<MemoryPosition> mMemoryPosition;
+	};
+
 	class FunctionCode {
 	public:
 		FunctionCode(Expression c, std::vector<CompressedLocalTypes> l)
@@ -380,6 +404,8 @@ namespace WASM {
 		auto& importedTableTypes() const { return mImportedTableTypes; }
 		auto& importedMemoryTypes() const { return mImportedMemoryTypes; }
 		auto& importedGlobalTypes() const { return mImportedGlobalTypes; }
+		auto& expectedDataSectionCount() const { return mExpectedDataSectionCount; }
+		auto& dataItems() const { return mDataItems; }
 		auto& name() const { return mName; }
 		auto& functionNames() const { return mFunctionNames; }
 		auto& functionLocalNames() const { return mFunctionLocalNames; }
@@ -411,6 +437,8 @@ namespace WASM {
 		std::optional<ModuleFunctionIndex> mStartFunctionIndex;
 		std::vector<Element> mElements;
 		std::vector<FunctionCode> mFunctionCodes;
+		std::optional<u32> mExpectedDataSectionCount;
+		std::vector<DataItem> mDataItems;
 
 		std::vector<FunctionImport> mImportedFunctions;
 		std::vector<TableImport> mImportedTableTypes;
@@ -459,6 +487,8 @@ namespace WASM {
 		void parseElementSection();
 		void parseCodeSection();
 		void parseImportSection();
+		void parseDataSection();
+		void parseDataCountSection();
 
 		NameMap parseNameMap();
 		IndirectNameMap parseIndirectNameMap();
@@ -475,9 +505,11 @@ namespace WASM {
 		Export parseExport();
 		Element parseElement();
 		FunctionCode parseFunctionCode();
+		DataItem parseDataItem();
 
 		std::vector<Expression> parseInitExpressionVector();
 		std::vector<ModuleFunctionIndex> parseU32Vector();
+		BufferSlice parseU8Vector();
 
 		void throwParsingError(const char*) const;
 
@@ -508,6 +540,7 @@ namespace WASM {
 		void validateGlobal(const DeclaredGlobal&);
 		void validateElementSegment(const Element&);
 		void validateImports();
+		void validateDataItem(const DataItem&);
 
 		void validateConstantExpression(const Expression&, ValType);
 
