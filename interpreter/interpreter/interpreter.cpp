@@ -905,9 +905,17 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			pushU32(reinterpret_cast<f64&>(opA) >= reinterpret_cast<f64&>(opB));
 			continue;
 		case BC::I32CountLeadingZeros:
+			opA = popU32();
+			pushU32(std::countl_zero((u32)opA));
+			continue;
 		case BC::I32CountTrailingZeros:
+			opA = popU32();
+			pushU32(std::countr_zero((u32)opA));
+			continue;
 		case BC::I32CountOnes:
-			break;
+			opA = popU32();
+			pushU32(std::popcount((u32)opA));
+			continue;
 		case BC::I32Add:
 			opB = popU32();
 			opA = popU32();
@@ -975,9 +983,19 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			continue;
 		case BC::I32RotateLeft:
 		case BC::I32RotateRight:
+			break;
 		case BC::I64CountLeadingZeros:
+			opA = popU64();
+			pushU64(std::countl_zero((u64)opA));
+			continue;
 		case BC::I64CountTrailingZeros:
+			opA = popU64();
+			pushU64(std::countr_zero((u64)opA));
+			continue;
 		case BC::I64CountOnes:
+			opA = popU64();
+			pushU64(std::popcount((u64)opA));
+			continue;
 		case BC::I64Add:
 			opB = popU64();
 			opA = popU64();
