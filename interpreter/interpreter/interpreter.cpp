@@ -1025,38 +1025,123 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 		case BC::F64Minimum:
 		case BC::F64Maximum:
 		case BC::F64CopySign:
-		case BC::I32WrapI64:
-		case BC::I32TruncateF32S:
-		case BC::I32TruncateF32U:
-		case BC::I32TruncateF64S:
-		case BC::I32TruncateF64U:
-		case BC::I64ExtendI32S:
-		case BC::I64ExtendI32U:
-		case BC::I64TruncateF32S:
-		case BC::I64TruncateF32U:
-		case BC::I64TruncateF64S:
-		case BC::I64TruncateF64U:
-		case BC::F32ConvertI32S:
-		case BC::F32ConvertI32U:
-		case BC::F32ConvertI64S:
-		case BC::F32ConvertI64U:
-		case BC::F32DemoteF64:
-		case BC::F64ConvertI32S:
-		case BC::F64ConvertI32U:
-		case BC::F64ConvertI64S:
-		case BC::F64ConvertI64U:
 			break;
+		case BC::I32WrapI64:
+			opA = popU64();
+			pushU32((u32)opA);
+			continue;
+		case BC::I32TruncateF32S:
+			opA = popU32();
+			pushU32((i32)(reinterpret_cast<f32&>(opA)));
+			continue;
+		case BC::I32TruncateF32U:
+			opA = popU32();
+			pushU32((u32)(reinterpret_cast<f32&>(opA)));
+			continue;
+		case BC::I32TruncateF64S:
+			opA = popU64();
+			pushU32((i32)(reinterpret_cast<f64&>(opA)));
+			continue;
+		case BC::I32TruncateF64U:
+			opA = popU64();
+			pushU32((u32)(reinterpret_cast<f64&>(opA)));
+			continue;
+		case BC::I64ExtendI32S:
+			opA = popU32();
+			pushU64( (i64)((i32)opA) );
+			continue;
+		case BC::I64ExtendI32U:
+			opA = popU32();
+			pushU64(opA);
+			continue;
+		case BC::I64TruncateF32S:
+			opA = popU32();
+			pushU64((i64)(reinterpret_cast<f32&>(opA)));
+			continue;
+		case BC::I64TruncateF32U:
+			opA = popU32();
+			pushU64((u64)(reinterpret_cast<f32&>(opA)));
+			continue;
+		case BC::I64TruncateF64S:
+			opA = popU64();
+			pushU64((i64)(reinterpret_cast<f64&>(opA)));
+			continue;
+		case BC::I64TruncateF64U:
+			opA = popU64();
+			pushU64((u64)(reinterpret_cast<f64&>(opA)));
+			continue;
+		case BC::F32ConvertI32S: {
+			f32 converted = (i32)popU32();
+			pushU32(reinterpret_cast<u32&>(converted));
+			continue;
+		}
+		case BC::F32ConvertI32U: {
+			f32 converted = (u32)popU32();
+			pushU32(reinterpret_cast<u32&>(converted));
+			continue;
+		}
+		case BC::F32ConvertI64S: {
+			f32 converted = (i64)popU64();
+			pushU32(reinterpret_cast<u32&>(converted));
+			continue;
+		}
+		case BC::F32ConvertI64U: {
+			f32 converted = (u64)popU64();
+			pushU32(reinterpret_cast<u32&>(converted));
+			continue;
+		}
+		case BC::F32DemoteF64: {
+			opA = popU64();
+			f32 demoted = reinterpret_cast<f64&>(opA);
+			pushU32(reinterpret_cast<u32&>(demoted));
+			continue;
+		}
+		case BC::F64ConvertI32S: {
+			f64 converted = (i32)popU32();
+			pushU64(reinterpret_cast<u64&>(converted));
+			continue;
+		}
+		case BC::F64ConvertI32U: {
+			f64 converted = (u32)popU32();
+			pushU64(reinterpret_cast<u64&>(converted));
+			continue;
+		}
+		case BC::F64ConvertI64S: {
+			f64 converted = (i64)popU64();
+			pushU64(reinterpret_cast<u64&>(converted));
+			continue;
+		}
+		case BC::F64ConvertI64U: {
+			f64 converted = (u64)popU64();
+			pushU64(reinterpret_cast<u64&>(converted));
+			continue;
+		}
 		case BC::F64PromoteF32: {
-			u32 x= popU32();
-			f64 y = *(f32*)&x;
-			pushU64(*(u64*)&y);
+			opA = popU32();
+			f64 promoted = reinterpret_cast<f32&>(opA);
+			pushU64(reinterpret_cast<u64&>(promoted));
 			continue;
 		}
 		case BC::I32Extend8s:
+			opA = popU32();
+			pushU32((i32)((i8)opA));
+			continue;
 		case BC::I32Extend16s:
+			opA = popU32();
+			pushU32((i32)((i16)opA));
+			continue;
 		case BC::I64Extend8s:
+			opA = popU64();
+			pushU64((i64)((i8)opA));
+			continue;
 		case BC::I64Extend16s:
+			opA = popU64();
+			pushU64((i64)((i16)opA));
+			continue;
 		case BC::I64Extend32s:
+			opA = popU64();
+			pushU64((i64)((i32)opA));
+			continue;
 		case BC::I32TruncateSaturateF32S:
 		case BC::I32TruncateSaturateF32U:
 		case BC::I32TruncateSaturateF64S:
