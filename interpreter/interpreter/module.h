@@ -26,6 +26,10 @@ namespace WASM {
 		virtual const FunctionType& functionType() const = 0;
 		InterpreterTypeIndex interpreterTypeIndex() const { return mInterpreterTypeIndex; }
 
+		// Const-cast helpers
+		auto asBytecodeFunction() { return Nullable<BytecodeFunction>::fromPointer( const_cast<BytecodeFunction*>(static_cast<const Function*>(this)->asBytecodeFunction().pointer()) ); }
+		auto asHostFunction() { return Nullable<HostFunctionBase>::fromPointer(const_cast<HostFunctionBase*>(static_cast<const Function*>(this)->asHostFunction().pointer())); }
+
 	protected:
 		ModuleFunctionIndex mModuleIndex;
 		InterpreterTypeIndex mInterpreterTypeIndex{ 0 };
@@ -83,6 +87,13 @@ namespace WASM {
 
 		i32 grow(i32, Nullable<Function>);
 		void init(const LinkedElement&, u32, u32, u32);
+
+		__forceinline Nullable<Function> at(u32 idx) {
+			if (idx > table.size()) {
+				throw std::runtime_error{ "Out of bounds table access" };
+			}
+			return table[idx];
+		}
 
 	private:
 		ModuleTableIndex index;

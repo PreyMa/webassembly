@@ -543,8 +543,31 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			doBytecodeFunctionCall(callee, stackParameterSection);
 			continue;
 		}
-		case BC::CallIndirect:
-			break;
+		case BC::CallIndirect:  {
+			auto functionIdx = popU32();
+			auto tableIdx = loadOperandU32();
+			auto typeIdx = loadOperandU32();
+			assert(tableIdx < allTables.size());
+			assert(typeIdx < allFunctionTypes.size());
+
+			auto& table = allTables[tableIdx];
+			auto function= table.at(functionIdx);
+			if (!function.has_value()) {
+				throw std::runtime_error("Invalid indirect call to null");
+			}
+			if (function->interpreterTypeIndex() != typeIdx) {
+				throw std::runtime_error("Invalid indirect call to mismatched function type");
+			}
+			auto hostFunction = function->asHostFunction();
+			if (hostFunction.has_value()) {
+				stackPointer = hostFunction->executeFunction(stackPointer);
+				continue;
+			}
+			auto bytecodeFunction = reinterpret_cast<BytecodeFunction*>(function.pointer());
+			auto stackParameterSection= bytecodeFunction->functionType().parameterStackSectionSizeInBytes() / 4;
+			doBytecodeFunctionCall(bytecodeFunction, stackParameterSection);
+			continue;
+		}
 		case BC::CallHost: {
 			auto callee = (HostFunctionBase*)loadOperandPtr();
 			stackPointer= callee->executeFunction(stackPointer);

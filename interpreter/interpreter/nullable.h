@@ -19,6 +19,11 @@ namespace WASM {
 			return { ptr.get() };
 		}
 
+		template<typename U>
+		static Nullable<T> fromPointer(U* ptr) {
+			return { ptr };
+		}
+
 		bool has_value() const { return ptr != nullptr; }
 		T& value() { return *ptr; }
 		const T& value() const { return *ptr; }

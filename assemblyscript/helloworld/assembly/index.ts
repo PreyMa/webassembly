@@ -87,7 +87,7 @@ printBool( x < y );
 printBool( x > x );
 printBool( x > y );*/
 
-export function switcher(x: i32): i32 {
+/*export function switcher(x: i32): i32 {
   switch(x) {
     case 1: return 31;
     case 2: return 62;
@@ -102,4 +102,19 @@ export function switcher(x: i32): i32 {
     
     default: return -1;
   }
+}*/
+
+type fnType= (x:i32) => i32;
+
+
+function test(x: fnType): i32 {
+  return x(3);
+}
+
+function a1(x:i32): i32 { return x* 10; }
+function a2(x:i32): i32 { return x+ 10; }
+
+export function ttest(a: i32): void {
+  let result= test( a > 10 ? a1 : a2 );
+  printInt(result);
 }
