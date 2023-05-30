@@ -460,9 +460,9 @@ Nullable<FunctionTable> Module::tableByIndex(ModuleTableIndex idx)
 	return functionTables[idx.value];
 }
 
-Nullable<LinkedElement> WASM::Module::linkedElementByIndex(Interpreter& interpreter, ModuleElementIndex idx)
+Nullable<LinkedElement> WASM::Module::linkedElementByIndex(ModuleElementIndex idx)
 {
-	auto elements = mElements.span(interpreter.allElements);
+	auto elements = mElements.span(mInterpreter->allElements);
 	if (idx >= elements.size()) {
 		return {};
 	}
@@ -1246,6 +1246,16 @@ const Memory& ModuleCompiler::memoryByIndex(ModuleMemoryIndex idx)
 	throwCompilationError("Memory index out of bounds");
 }
 
+const LinkedElement& WASM::ModuleCompiler::linkedElementByIndex(ModuleElementIndex idx) const
+{
+	auto element= module.linkedElementByIndex(idx);
+	if (element.has_value()) {
+		return *element;
+	}
+
+	throwCompilationError("Linked element index out of bounds");
+}
+
 u32 ModuleCompiler::measureMaxPrintedBlockLength(u32 startInstruction, u32 labelIdx, bool runToElse) const
 {
 	assert(currentFunction);
@@ -1900,16 +1910,13 @@ void ModuleCompiler::compileTableInstruction(Instruction instruction)
 	InterpreterLinkedElementIndex interpreterElementIdx{ 0 };
 	if (instruction == IT::TableInit) {
 		auto moduleElementIdx = instruction.elementIndex();
-		auto linkedElement = module.linkedElementByIndex(interpreter, moduleElementIdx);
-		if (!linkedElement.has_value()) {
-			throwCompilationError("Table init instruction references invalid element");
-		}
+		auto linkedElement = linkedElementByIndex(moduleElementIdx);
 
-		if (table->type() != linkedElement->referenceType()) {
+		if (table->type() != linkedElement.referenceType()) {
 			throwCompilationError("Table init instruction references element with incompatible type");
 		}
 
-		interpreterElementIdx = interpreter.indexOfLinkedElement(*linkedElement);
+		interpreterElementIdx = interpreter.indexOfLinkedElement(linkedElement);
 	}
 
 	auto bytecode = instruction.toBytecode();
@@ -2406,11 +2413,8 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 
 	case IT::ElementDrop: {
 		auto moduleElementIdx = instruction.elementIndex();
-		auto element = module.linkedElementByIndex(interpreter, moduleElementIdx);
-		if (!element.has_value()) {
-			throwCompilationError("Element drop instruction references invalid element index");
-		}
-		auto interpreterElementIdx = interpreter.indexOfLinkedElement(*element);
+		auto element = linkedElementByIndex(moduleElementIdx);
+		auto interpreterElementIdx = interpreter.indexOfLinkedElement(element);
 
 		print(Bytecode::ElementDrop);
 		printU32(interpreterElementIdx.value);
