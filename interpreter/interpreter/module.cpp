@@ -541,6 +541,16 @@ Nullable<LinkedElement> WASM::Module::linkedElementByIndex(ModuleElementIndex id
 	return elements[idx.value];
 }
 
+Nullable<LinkedDataItem> WASM::Module::linkedDataItemByIndex(ModuleDataIndex idx)
+{
+	auto dataItems = mDataItems.span(mInterpreter->allDataItems);
+	if (idx > dataItems.size()) {
+		return {};
+	}
+
+	return dataItems[idx.value];
+}
+
 Nullable<const Function> Module::findFunctionByBytecodePointer(const u8* pointer) const
 {
 	for (auto& func : mFunctions.constSpan(mInterpreter->allFunctions)) {
@@ -1336,6 +1346,16 @@ const LinkedElement& WASM::ModuleCompiler::linkedElementByIndex(ModuleElementInd
 	throwCompilationError("Linked element index out of bounds");
 }
 
+const LinkedDataItem& WASM::ModuleCompiler::linkedDataItemByIndex(ModuleDataIndex idx) const
+{
+	auto dataItem = module.linkedDataItemByIndex(idx);
+	if (dataItem.has_value()) {
+		return *dataItem;
+	}
+
+	throwCompilationError("Data item index out of bounds");
+}
+
 u32 ModuleCompiler::measureMaxPrintedBlockLength(u32 startInstruction, u32 labelIdx, bool runToElse) const
 {
 	assert(currentFunction);
@@ -1877,10 +1897,11 @@ void ModuleCompiler::compileMemoryControlInstruction(Instruction instruction)
 		break;
 	}
 
-	// Nullable<Data> data;
+	InterpreterLinkedDataIndex dataItemIdx{ 0 };
 	if (instruction == InstructionType::MemoryInit || instruction == InstructionType::DataDrop) {
-		// FIXME: Check if the data segment actually exists
-		assert(false);
+		// Always check if the data item exists, even if code is not reachable
+		auto dataItem = linkedDataItemByIndex(instruction.dataSegmentIndex());
+		dataItemIdx = interpreter.indexOfLinkedDataItem(dataItem);
 	}
 
 	if (isReachable()) {
@@ -1889,7 +1910,7 @@ void ModuleCompiler::compileMemoryControlInstruction(Instruction instruction)
 		print(*bytecode);
 
 		if (instruction == InstructionType::MemoryInit || instruction == InstructionType::DataDrop) {
-			printU32(instruction.dataSegmentIndex());
+			printU32(dataItemIdx.value);
 		}
 	}
 }

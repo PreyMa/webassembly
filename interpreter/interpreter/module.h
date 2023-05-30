@@ -224,6 +224,7 @@ namespace WASM {
 		Nullable<Memory> memoryByIndex(ModuleMemoryIndex);
 		Nullable<FunctionTable> tableByIndex(ModuleTableIndex);
 		Nullable<LinkedElement> linkedElementByIndex(ModuleElementIndex);
+		Nullable<LinkedDataItem> linkedDataItemByIndex(ModuleDataIndex);
 		Nullable<Function> startFunction() const { return mLinkedStartFunction; }
 		Nullable<Memory> memoryWithIndexZero() const { return mLinkedMemory; }
 
@@ -431,6 +432,7 @@ namespace WASM {
 		const FunctionType& blockTypeByIndex(ModuleTypeIndex);
 		const Memory& memoryByIndex(ModuleMemoryIndex);
 		const LinkedElement& linkedElementByIndex(ModuleElementIndex) const;
+		const LinkedDataItem& linkedDataItemByIndex(ModuleDataIndex) const;
 		u32 measureMaxPrintedBlockLength(u32, u32, bool= false) const;
 		void requestAddressPatch(u32, bool, bool = false, std::optional<u32> jumpReferencePosition = {});
 		void patchAddress(const AddressPatchRequest&);

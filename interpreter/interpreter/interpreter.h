@@ -95,6 +95,7 @@ namespace WASM {
 		InterpreterMemoryIndex indexOfMemoryInstance(const Memory&) const;
 		InterpreterTableIndex indexOfTableInstance(const FunctionTable&);
 		InterpreterLinkedElementIndex indexOfLinkedElement(const LinkedElement&);
+		InterpreterLinkedDataIndex indexOfLinkedDataItem(const LinkedDataItem&);
 
 		void initState(const BytecodeFunction& function);
 		void saveState(const u8*, u32*, u32*, Memory*);

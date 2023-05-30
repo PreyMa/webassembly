@@ -187,6 +187,13 @@ InterpreterLinkedElementIndex WASM::Interpreter::indexOfLinkedElement(const Link
 	return InterpreterLinkedElementIndex{ (u32)*idx };
 }
 
+InterpreterLinkedDataIndex WASM::Interpreter::indexOfLinkedDataItem(const LinkedDataItem& item)
+{
+	auto idx = allDataItems.indexOfPointer(&item);
+	assert(idx.has_value());
+	return InterpreterLinkedDataIndex{ (u32)*idx };
+}
+
 void Interpreter::initState(const BytecodeFunction& function)
 {
 	if (mStackBase) {
