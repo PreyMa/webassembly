@@ -411,10 +411,10 @@ namespace WASM {
 		auto& functionLocalNames() const { return mFunctionLocalNames; }
 
 		// Getters that allow moving parts out of the parsing state into different storage
-		auto releaseElements() const { return std::move(mElements); }
-		auto releaseFunctionCodes() const { return std::move(mFunctionCodes); }
-		auto releaseFunctionNames() const { return std::move(mFunctionNames); }
-		auto releaseFunctionLocalNames() const { return std::move(mFunctionLocalNames); }
+		auto releaseElements() { return std::move(mElements); }
+		auto releaseFunctionCodes() { return std::move(mFunctionCodes); }
+		auto releaseFunctionNames() { return std::move(mFunctionNames); }
+		auto releaseFunctionLocalNames() { return std::move(mFunctionLocalNames); }
 
 		auto& mutateImportedFunctions() { return mImportedFunctions; }
 		auto& mutateImportedTableTypes() { return mImportedTableTypes; }
