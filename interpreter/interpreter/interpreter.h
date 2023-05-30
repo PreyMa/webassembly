@@ -77,6 +77,7 @@ namespace WASM {
 		friend class Module;
 		friend class ModuleLinker;
 		friend class ModuleCompiler;
+		friend class DataItem;
 
 		struct FunctionLookup {
 			const Function& function;
@@ -110,6 +111,7 @@ namespace WASM {
 		SealedVector<Global<u32>> allGlobals32;
 		SealedVector<Global<u64>> allGlobals64;
 		SealedVector<LinkedElement> allElements;
+		SealedVector<LinkedDataItem> allDataItems;
 
 		bool hasLinked{ false };
 		bool isInterpreting{ false };

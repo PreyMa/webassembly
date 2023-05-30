@@ -296,7 +296,7 @@ namespace WASM {
 		ModuleFunctionIndex functionIndex() const;
 		ModuleTableIndex tableIndex() const;
 		u32 memoryOffset() const;
-		u32 dataSegmentIndex() const;
+		ModuleDataIndex dataSegmentIndex() const;
 		ModuleTableIndex callTableIndex() const;
 		ModuleElementIndex elementIndex() const;
 		ModuleTableIndex sourceTableIndex() const;

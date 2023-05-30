@@ -1789,10 +1789,10 @@ u32 Instruction::memoryOffset() const
 	return operandB;
 }
 
-u32 Instruction::dataSegmentIndex() const
+ModuleDataIndex Instruction::dataSegmentIndex() const
 {
 	assert(type == InstructionType::MemoryInit || type == InstructionType::DataDrop);
-	return operandA;
+	return ModuleDataIndex{ operandA };
 }
 
 ModuleTableIndex Instruction::callTableIndex() const

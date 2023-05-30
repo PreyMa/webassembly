@@ -64,6 +64,7 @@ namespace WASM {
     using InterpreterMemoryIndex = TypedIndex<u32, 12>;
     using InterpreterTableIndex = TypedIndex<u32, 13>;
     using InterpreterLinkedElementIndex = TypedIndex<u32, 15>;
+    using InterpreterLinkedDataIndex = TypedIndex<u32, 16>;
 
     using LocalFunctionIndex = TypedIndex<u32, 20>;             // References a local function in a module disregarding any imported functions
 

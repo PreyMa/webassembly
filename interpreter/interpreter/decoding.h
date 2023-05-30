@@ -225,7 +225,7 @@ namespace WASM {
 		Nullable<const std::vector<Expression>> initExpressions() const;
 
 		void print(std::ostream& out) const;
-		LinkedElement decodeAndLink(ModuleElementIndex, Module&);
+		LinkedElement decodeAndLink(ModuleElementIndex, Module&) const;
 
 	private:
 		ElementMode mMode;
@@ -251,6 +251,7 @@ namespace WASM {
 		const auto& memoryPosition() const { return mMemoryPosition; }
 
 		void print(std::ostream&, bool showData= true) const;
+		LinkedDataItem decodeAndLink(ModuleDataIndex, Interpreter&, Module&) const;
 
 	private:
 		DataItemMode mMode;
@@ -412,6 +413,7 @@ namespace WASM {
 
 		// Getters that allow moving parts out of the parsing state into different storage
 		auto releaseElements() { return std::move(mElements); }
+		auto releaseDataItems() { return std::move(mDataItems); }
 		auto releaseFunctionCodes() { return std::move(mFunctionCodes); }
 		auto releaseFunctionNames() { return std::move(mFunctionNames); }
 		auto releaseFunctionLocalNames() { return std::move(mFunctionLocalNames); }

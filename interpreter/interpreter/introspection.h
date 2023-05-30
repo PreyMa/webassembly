@@ -54,6 +54,7 @@ namespace WASM {
 
 		virtual void onRegisteredModule(const ModuleBase&) = 0;
 		virtual void onModuleTableInitialized(const Module&, sizeType, sizeType) = 0;
+		virtual void onModuleMemoryInitialized(const Module&, sizeType, sizeType) = 0;
 	};
 
 	class DebugLogger : public Introspector {
@@ -97,6 +98,7 @@ namespace WASM {
 
 		virtual void onRegisteredModule(const ModuleBase&) override;
 		virtual void onModuleTableInitialized(const Module&, sizeType, sizeType) override;
+		virtual void onModuleMemoryInitialized(const Module&, sizeType, sizeType) override;
 
 	protected:
 		virtual std::ostream& outStream() = 0;

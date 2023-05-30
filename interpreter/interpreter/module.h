@@ -115,6 +115,26 @@ namespace WASM {
 		std::vector<Nullable<Function>> mFunctions;
 	};
 
+	class LinkedDataItem {
+	public:
+		LinkedDataItem(ModuleDataIndex i, DataItemMode m, BufferSlice d)
+			: mModuleIndex{ i }, mMode{ m }, mDataBytes{ std::move(d) }, mMemoryIndex{0}, mMemoryOffset{0} {}
+
+		LinkedDataItem(ModuleDataIndex i, DataItemMode m, BufferSlice d, InterpreterMemoryIndex x, u32 o)
+			: mModuleIndex{ i }, mMode{ m }, mDataBytes{ std::move(d) }, mMemoryIndex{ x }, mMemoryOffset{ o } {}
+
+		sizeType initMemoryIfActive(Module&) const;
+
+		auto& dataBytes() const { return mDataBytes; }
+
+	private:
+		ModuleDataIndex mModuleIndex;
+		DataItemMode mMode;
+		BufferSlice mDataBytes;
+		InterpreterMemoryIndex mMemoryIndex;
+		u32 mMemoryOffset;
+	};
+
 	class Memory {
 	public:
 		static constexpr u64 PageSize = 65536;
@@ -122,6 +142,7 @@ namespace WASM {
 		Memory(ModuleMemoryIndex, Limits l);
 
 		i32 grow(i32);
+		void init(const LinkedDataItem&, u32, u32, u32);
 
 		auto& limits() const { return mLimits; }
 		u64 minBytes() const;
@@ -197,7 +218,6 @@ namespace WASM {
 		virtual std::string_view name() const override { return mName; }
 
 		bool needsLinking() const { return compilationData != nullptr; }
-		void instantiate(ModuleLinker&, Nullable<Introspector>);
 
 		Nullable<Function> functionByIndex(ModuleFunctionIndex);
 		std::optional<ResolvedGlobal> globalByIndex(ModuleGlobalIndex);
@@ -220,11 +240,15 @@ namespace WASM {
 		friend class ModuleCompiler;
 		friend class ModuleLinker;
 
+		void instantiate(ModuleLinker&, Nullable<Introspector>);
 		void createFunctions(ModuleLinker&, Nullable<Introspector>);
 		void createMemory(ModuleLinker&, Nullable<Introspector>);
 		void createTables(ModuleLinker&, Nullable<Introspector>);
 		void createGlobals(ModuleLinker&, Nullable<Introspector>);
+		
+		void initializeInstance(ModuleLinker&, Nullable<Introspector>);
 		void createElementsAndInitTables(ModuleLinker&, Nullable<Introspector>);
+		void createDataItemsAndInitMemory(ModuleLinker&, Nullable<Introspector>);
 
 		std::string mPath;
 		std::string mName;
@@ -237,10 +261,10 @@ namespace WASM {
 		IndexSpan<InterpreterGlobalTypedArrayIndex, Global<u32>> mGlobals32;
 		IndexSpan<InterpreterGlobalTypedArrayIndex, Global<u64>> mGlobals64;
 		IndexSpan<InterpreterLinkedElementIndex, LinkedElement> mElements;
+		IndexSpan<InterpreterLinkedDataIndex, LinkedDataItem> mDataItems;
 		Nullable<Function> mLinkedStartFunction;
 		Nullable<Memory> mLinkedMemory;
 
-		//std::unique_ptr<CompilationData> compilationData;
 		std::unique_ptr<ParsingState> compilationData;
 		ExportTable exports;
 
@@ -264,6 +288,7 @@ namespace WASM {
 		std::vector<FunctionTable>& createTables(u32);
 		std::vector<LinkedElement>& createElements(u32);
 		std::vector<Memory>& createMemory();
+		std::vector<LinkedDataItem>& createDataItems(u32);
 		std::vector<Global<u32>>& createGlobals32(u32);
 		std::vector<Global<u64>>& createGlobals64(u32);
 
@@ -283,7 +308,7 @@ namespace WASM {
 		void linkDependencies();
 		void addDepenencyItem(DependencyItem);
 		void initGlobals();
-		void initTables();
+		void initializeModules();
 		void linkMemoryInstances();
 		void linkStartFunctions();
 
@@ -295,6 +320,7 @@ namespace WASM {
 		std::vector<FunctionTable> allTables;
 		std::vector<LinkedElement> allElements;
 		std::vector<Memory> allMemories;
+		std::vector<LinkedDataItem> allDataItems;
 		std::vector<Global<u32>> allGlobals32;
 		std::vector<Global<u64>> allGlobals64;
 

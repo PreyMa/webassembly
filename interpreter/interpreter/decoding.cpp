@@ -1165,7 +1165,7 @@ void Element::print(std::ostream& out) const
 	}
 }
 
-LinkedElement Element::decodeAndLink(ModuleElementIndex index, Module& module)
+LinkedElement Element::decodeAndLink(ModuleElementIndex index, Module& module) const
 {
 	u32 tableOffset = mTablePosition.has_value() ? mTablePosition->tableOffset.constantI32() : 0;
 	if (mMode == ElementMode::Passive) {
@@ -1519,6 +1519,7 @@ void ModuleValidator::validateElementSegment(const Element& elem)
 			throwValidationError("Element segment references invalid table index");
 		}
 
+		// FIXME: Take a look at 'DataItem' and 'LinkedDataItem' to see how to maybe implement this properly
 		if (tableIdx < numImportedTables) {
 			throw std::runtime_error{ "Element segments referencing imported table types are currently not supported." };
 		}
@@ -1889,4 +1890,22 @@ void DataItem::print(std::ostream& out, bool showData) const
 		out << std::endl << "    data (" << mDataBytes.size() << " bytes): ";
 		mDataBytes.print(out, 100);
 	}
+}
+
+LinkedDataItem WASM::DataItem::decodeAndLink(ModuleDataIndex index, Interpreter& interpreter, Module& module) const
+{
+	if (mMode == DataItemMode::Passive) {
+		return { index, mMode, std::move(mDataBytes) };
+	}
+
+	assert(mMemoryPosition.has_value());
+	auto moduleMemoryIdx = mMemoryPosition->mMemoryIndex;
+	auto memoryOffset = (u32) mMemoryPosition->mOffsetExpression.constantI32();
+
+	auto memory = module.memoryByIndex(moduleMemoryIdx);
+	assert(memory.has_value());
+
+	auto interpreterMemoryIdx = interpreter.indexOfMemoryInstance(*memory);
+
+	return { index, mMode, std::move(mDataBytes), interpreterMemoryIdx, memoryOffset };
 }

@@ -179,6 +179,20 @@ sizeType LinkedElement::initTableIfActive(std::span<FunctionTable> tables)
 	return mFunctions.size();
 }
 
+sizeType WASM::LinkedDataItem::initMemoryIfActive(Module& module) const
+{
+	if (mMode != DataItemMode::Active) {
+		return 0;
+	}
+
+	// FIXME: Just assume memory index 0 here
+	auto memory= module.memoryByIndex(ModuleMemoryIndex{ 0 });
+	assert(memory.has_value());
+
+	memory->init(*this, mMemoryOffset, 0, mDataBytes.size());
+	return mDataBytes.size();
+}
+
 Memory::Memory(ModuleMemoryIndex idx, Limits l)
 	: mIndex{ idx }, mLimits{ l } {
 	grow(mLimits.min());
@@ -202,6 +216,26 @@ i32 Memory::grow(i32 pageCountIncrease)
 	catch (std::bad_alloc& e) {
 		return -1;
 	}
+}
+
+void WASM::Memory::init(const LinkedDataItem& dataItem, u32 memoryOffset, u32 itemOffset, u32 numBytes)
+{
+	// https://webassembly.github.io/spec/core/exec/instructions.html#xref-syntax-instructions-syntax-instr-memory-mathsf-memory-init-x
+
+	if (!numBytes) {
+		return;
+	}
+
+	auto& bytes = dataItem.dataBytes();
+	if (itemOffset + numBytes > bytes.size()) {
+		throw std::runtime_error{ "Invalid memory init: Data item access out of bounds" };
+	}
+
+	if (memoryOffset + numBytes > mData.size()) {
+		throw std::runtime_error{ "Invalid memory init: Memory access out of bounds" };
+	}
+
+	memcpy(pointer(memoryOffset), bytes.begin()+ itemOffset, numBytes);
 }
 
 u64 Memory::minBytes() const {
@@ -294,6 +328,13 @@ void Module::createTables(ModuleLinker& linker, Nullable<Introspector>)
 	}
 }
 
+void WASM::Module::initializeInstance(ModuleLinker& linker, Nullable<Introspector> introspector)
+{
+	assert(compilationData);
+	createElementsAndInitTables(linker, introspector);
+	createDataItemsAndInitMemory(linker, introspector);
+}
+
 void Module::createElementsAndInitTables(ModuleLinker& linker, Nullable<Introspector> introspector)
 {
 	// Create linked elements
@@ -325,6 +366,36 @@ void Module::createElementsAndInitTables(ModuleLinker& linker, Nullable<Introspe
 
 	if (introspector.has_value()) {
 		introspector->onModuleTableInitialized(*this, numElements, numFunctions);
+	}
+}
+
+void WASM::Module::createDataItemsAndInitMemory(ModuleLinker& linker, Nullable<Introspector> introspector)
+{
+	// Create linked data items
+	auto unlinkedItems = compilationData->releaseDataItems();
+	auto& linkedItems = linker.createDataItems(unlinkedItems.size());
+
+	mDataItems.init(linkedItems, unlinkedItems.size());
+
+	// TODO: Add a count of reamining actively used data items to be
+	// able to free them during run time
+	sizeType numBytes = 0;
+	sizeType numDataItems = 0;
+	for (u32 i = 0; i != unlinkedItems.size(); i++) {
+		auto& unlinkedItem = unlinkedItems[i];
+
+		ModuleDataIndex dataIdx{ i };
+		linkedItems.emplace_back(unlinkedItem.decodeAndLink(dataIdx, *mInterpreter, *this));
+		auto initCount = linkedItems.back().initMemoryIfActive(*this);
+
+		if (initCount > 0) {
+			numBytes += initCount;
+			numDataItems++;
+		}
+	}
+
+	if (introspector.has_value()) {
+		introspector->onModuleMemoryInitialized(*this, numDataItems, numBytes);
 	}
 }
 
@@ -648,7 +719,7 @@ void ModuleLinker::link()
 	linkDependencies();
 
 	initGlobals();
-	initTables();
+	initializeModules();
 	linkMemoryInstances();
 	linkStartFunctions();
 
@@ -676,6 +747,7 @@ void WASM::ModuleLinker::storeLinkedItems()
 	interpreter.allGlobals32 = std::move(allGlobals32);
 	interpreter.allGlobals64 = std::move(allGlobals64);
 	interpreter.allElements = std::move(allElements);
+	interpreter.allDataItems = std::move(allDataItems);
 }
 
 std::vector<BytecodeFunction>& WASM::ModuleLinker::createFunctions(u32 numFunctions)
@@ -699,6 +771,12 @@ std::vector<LinkedElement>& WASM::ModuleLinker::createElements(u32 numElements)
 std::vector<Memory>& WASM::ModuleLinker::createMemory()
 {
 	return allMemories;
+}
+
+std::vector<LinkedDataItem>& WASM::ModuleLinker::createDataItems(u32 numItems)
+{
+	allDataItems.reserve(allDataItems.size() + numItems);
+	return allDataItems;
 }
 
 std::vector<Global<u32>>& WASM::ModuleLinker::createGlobals32(u32 numGlobals)
@@ -760,13 +838,15 @@ void ModuleLinker::initGlobals()
 	}
 }
 
-void ModuleLinker::initTables()
+void ModuleLinker::initializeModules()
 {
 	// Table elements might reference imported functions and therefore
-	// can only be populated after resolving imports
+	// can only be populated after resolving imports. The same goes for
+	// memory data segments wich might reference an imported memory
+	// instance
 
 	for (auto& module : interpreter.wasmModules) {
-		module.createElementsAndInitTables(*this, introspector);
+		module.initializeInstance(*this, introspector);
 	}
 }
 

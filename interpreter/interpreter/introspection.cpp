@@ -410,6 +410,12 @@ void WASM::DebugLogger::onModuleTableInitialized(const Module& module, sizeType 
 		" function entries initialized by " << numElements << " active element segments" << std::endl;
 }
 
+void WASM::DebugLogger::onModuleMemoryInitialized(const Module& module, sizeType numDataItems, sizeType numBytes)
+{
+	outStream() << "Initalized memory instance in module '" << module.name() << "'. " << numBytes <<
+		" bytes initialized by " << numDataItems << " active data segment items" << std::endl;
+}
+
 std::ostream& WASM::ConsoleLogger::outStream()
 {
 	return stream;
