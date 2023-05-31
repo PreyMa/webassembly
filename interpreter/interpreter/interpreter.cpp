@@ -3,6 +3,7 @@
 #include <iostream>
 #include <iomanip>
 #include <cassert>
+#include <bit>
 
 #include "interpreter.h"
 #include "introspection.h"
@@ -982,8 +983,15 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			pushU32(opA >> opB);
 			continue;
 		case BC::I32RotateLeft:
+			opA = popU64();
+			opB = popU64();
+			pushU64(std::rotl((u32)opA, (u32)opB));
+			continue;
 		case BC::I32RotateRight:
-			break;
+			opA = popU64();
+			opB = popU64();
+			pushU64(std::rotr((u32)opA, (u32)opB));
+			continue;
 		case BC::I64CountLeadingZeros:
 			opA = popU64();
 			pushU64(std::countl_zero((u64)opA));
@@ -1002,19 +1010,75 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			pushU64(opA + opB);
 			continue;
 		case BC::I64Subtract:
+			opB = popU64();
+			opA = popU64();
+			pushU64(opA - opB);
+			continue;
 		case BC::I64Multiply:
+			opB = popU64();
+			opA = popU64();
+			pushU64(opA * opB);
+			continue;
 		case BC::I64DivideS:
+			opB = popU64();
+			opA = popU64();
+			pushU64((i64)opA + (i64)opB);
+			continue;
 		case BC::I64DivideU:
+			opB = popU64();
+			opA = popU64();
+			pushU64(opA + opB);
+			continue;
 		case BC::I64RemainderS:
+			opB = popU64();
+			opA = popU64();
+			pushU64((i64)opA % (i64)opB);
+			continue;
 		case BC::I64RemainderU:
+			opB = popU64();
+			opA = popU64();
+			pushU64(opA % opB);
+			continue;
 		case BC::I64And:
+			opB = popU64();
+			opA = popU64();
+			pushU64(opA & opB);
+			continue;
 		case BC::I64Or:
+			opB = popU64();
+			opA = popU64();
+			pushU64(opA | opB);
+			continue;
 		case BC::I64Xor:
+			opB = popU64();
+			opA = popU64();
+			pushU64(opA ^ opB);
+			continue;
 		case BC::I64ShiftLeft:
+			opB = popU64();
+			opA = popU64();
+			pushU64(opA << opB);
+			continue;
 		case BC::I64ShiftRightS:
+			opB = popU64();
+			opA = popU64();
+			pushU64((i64)opA >> (i64)opB);
+			continue;
 		case BC::I64ShiftRightU:
+			opB = popU64();
+			opA = popU64();
+			pushU64(opA >> opB);
+			continue;
 		case BC::I64RotateLeft:
+			opA = popU64();
+			opB = popU64();
+			pushU64(std::rotl(opA, opB));
+			continue;
 		case BC::I64RotateRight:
+			opA = popU64();
+			opB = popU64();
+			pushU64(std::rotr(opA, opB));
+			continue;
 		case BC::F32Absolute:
 		case BC::F32Negate:
 		case BC::F32Ceil:
