@@ -796,13 +796,13 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			pushU32(opA == 0);
 			continue;
 		case BC::I64Equal:
-			opA = popU64();
 			opB = popU64();
+			opA = popU64();
 			pushU32(opA == opB);
 			continue;
 		case BC::I64NotEqual:
-			opA = popU64();
 			opB = popU64();
+			opA = popU64();
 			pushU32(opA != opB);
 			continue;
 		case BC::I64LesserS:
@@ -983,13 +983,13 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			pushU32(opA >> opB);
 			continue;
 		case BC::I32RotateLeft:
-			opA = popU64();
 			opB = popU64();
+			opA = popU64();
 			pushU64(std::rotl((u32)opA, (u32)opB));
 			continue;
 		case BC::I32RotateRight:
-			opA = popU64();
 			opB = popU64();
+			opA = popU64();
 			pushU64(std::rotr((u32)opA, (u32)opB));
 			continue;
 		case BC::I64CountLeadingZeros:
@@ -1070,13 +1070,13 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			pushU64(opA >> opB);
 			continue;
 		case BC::I64RotateLeft:
-			opA = popU64();
 			opB = popU64();
+			opA = popU64();
 			pushU64(std::rotl(opA, opB));
 			continue;
 		case BC::I64RotateRight:
-			opA = popU64();
 			opB = popU64();
+			opA = popU64();
 			pushU64(std::rotr(opA, opB));
 			continue;
 		case BC::F32Absolute:
