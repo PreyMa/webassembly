@@ -282,8 +282,8 @@ void Interpreter::dumpStack(std::ostream& out) const
 				out << "  " << (u64)--stackPointer << " (-" << std::setw(2) << ++stackPointerOffset << ") " << name << ": " << *reinterpret_cast<u64**>(stackPointer) << std::endl;
 			};
 
-			auto printTypedLocals = [&](const char* const name, i32 endIdx, i32 beginIdx) {
-				for (i32 i = endIdx - 1; i >= beginIdx; i--) {
+			auto printTypedLocals = [&](const char* const name, sizeType endIdx, sizeType beginIdx) {
+				for (sizeType i = endIdx - 1; i >= beginIdx; i--) {
 					auto localOffset = bytecodeFunction->localOrParameterByIndex(i);
 					assert(localOffset.has_value());
 					if (localOffset->type.sizeInBytes() == 4) {
@@ -605,29 +605,29 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			continue;
 		case BC::I32LocalGetFar:
 			opA = loadOperandU32();
-			pushU32(stackPointer[-opA]);
+			pushU32(stackPointer[-(i32)opA]);
 			continue;
 		case BC::I32LocalSetFar:
 			opA = loadOperandU32();
-			stackPointer[-opA] = popU32();
+			stackPointer[-(i32)opA] = popU32();
 			continue;
 		case BC::I32LocalTeeFar:
 			opA = loadOperandU32();
 			opB = stackPointer[-1];
-			stackPointer[-opA] = opB;
+			stackPointer[-(i32)opA] = (u32) opB;
 			continue;
 		case BC::I32LocalGetNear:
 			opA = *(instructionPointer++);
-			pushU32(stackPointer[-opA]);
+			pushU32(stackPointer[-(i32)opA]);
 			continue;
 		case BC::I32LocalSetNear:
 			opA = *(instructionPointer++);
-			stackPointer[-opA]= popU32();
+			stackPointer[-(i32)opA]= popU32();
 			continue;
 		case BC::I32LocalTeeNear:
 			opA = *(instructionPointer++);
 			opB = stackPointer[-1];
-			stackPointer[-opA] = opB;
+			stackPointer[-(i32)opA] = (u32) opB;
 			continue;
 		case BC::I64LocalGetFar:
 			opA = loadOperandU32();
