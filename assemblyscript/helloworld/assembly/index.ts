@@ -118,3 +118,7 @@ export function ttest(a: i32): void {
   let result= test( a > 10 ? a1 : a2 );
   printInt(result);
 }
+
+export function fptest(x: f32): i32 {
+  return Math.round(x* 2.5 as f32) as i32
+}

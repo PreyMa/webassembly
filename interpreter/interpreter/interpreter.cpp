@@ -1079,20 +1079,100 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			opA = popU64();
 			pushU64(std::rotr(opA, opB));
 			continue;
-		case BC::F32Absolute:
-		case BC::F32Negate:
-		case BC::F32Ceil:
-		case BC::F32Floor:
-		case BC::F32Truncate:
-		case BC::F32Nearest:
-		case BC::F32SquareRoot:
-		case BC::F32Add:
-		case BC::F32Subtract:
-		case BC::F32Multiply:
-		case BC::F32Divide:
-		case BC::F32Minimum:
-		case BC::F32Maximum:
-		case BC::F32CopySign:
+		case BC::F32Absolute: {
+			opA = popU32();
+			f32 abs = std::abs(reinterpret_cast<f32&>(opA));
+			pushU32(reinterpret_cast<u32&>(abs));
+			continue;
+		}
+		case BC::F32Negate: {
+			opA = popU32();
+			f32 neg = -reinterpret_cast<f32&>(opA);
+			pushU32(reinterpret_cast<u32&>(neg));
+			continue;
+		}
+		case BC::F32Ceil: {
+			opA = popU32();
+			f32 ceiled = std::ceil(reinterpret_cast<f32&>(opA));
+			pushU32(reinterpret_cast<u32&>(ceiled));
+			continue;
+		}
+		case BC::F32Floor: {
+			opA = popU32();
+			f32 floored = std::floor(reinterpret_cast<f32&>(opA));
+			pushU32(reinterpret_cast<u32&>(floored));
+			continue;
+		}
+		case BC::F32Truncate: {
+			opA = popU32();
+			f32 truncated = std::trunc(reinterpret_cast<f32&>(opA));
+			pushU32(reinterpret_cast<u32&>(truncated));
+			continue;
+		}
+		case BC::F32Nearest: {
+			// FIXME: This rounds away from zero in half-way cases. However, it actually should
+			// round towards the neaerest even number.
+			// https://webassembly.github.io/spec/core/exec/numerics.html#op-fnearest
+			opA = popU32();
+			f32 rounded = std::round(reinterpret_cast<f32&>(opA));
+			pushU32(reinterpret_cast<u32&>(rounded));
+			continue;
+		}
+		case BC::F32SquareRoot: {
+			opA = popU32();
+			f32 root = std::sqrt(reinterpret_cast<f32&>(opA));
+			pushU32(reinterpret_cast<u32&>(root));
+			continue;
+		}
+		case BC::F32Add: {
+			opB = popU32();
+			opA = popU32();
+			f32 result = reinterpret_cast<f32&>(opA) + reinterpret_cast<f32&>(opB);
+			pushU32(reinterpret_cast<u32&>(result));
+			continue;
+		}
+		case BC::F32Subtract: {
+			opB = popU32();
+			opA = popU32();
+			f32 result = reinterpret_cast<f32&>(opA) - reinterpret_cast<f32&>(opB);
+			pushU32(reinterpret_cast<u32&>(result));
+			continue;
+		}
+		case BC::F32Multiply: {
+			opB = popU32();
+			opA = popU32();
+			f32 result = reinterpret_cast<f32&>(opA) * reinterpret_cast<f32&>(opB);
+			pushU32(reinterpret_cast<u32&>(result));
+			continue;
+		}
+		case BC::F32Divide: {
+			opB = popU32();
+			opA = popU32();
+			f32 result = reinterpret_cast<f32&>(opA) / reinterpret_cast<f32&>(opB);
+			pushU32(reinterpret_cast<u32&>(result));
+			continue;
+		}
+		case BC::F32Minimum: {
+			opB = popU32();
+			opA = popU32();
+			f32 result = std::min(reinterpret_cast<f32&>(opA), reinterpret_cast<f32&>(opB));
+			pushU32(reinterpret_cast<u32&>(result));
+			continue;
+		}
+		case BC::F32Maximum: {
+			opB = popU32();
+			opA = popU32();
+			f32 result = std::max(reinterpret_cast<f32&>(opA), reinterpret_cast<f32&>(opB));
+			pushU32(reinterpret_cast<u32&>(result));
+			continue;
+		}
+		case BC::F32CopySign: {
+			opB = popU32();
+			opA = popU32();
+			f32 result = std::copysign(reinterpret_cast<f32&>(opA), reinterpret_cast<f32&>(opB));
+			pushU32(reinterpret_cast<u32&>(result));
+			continue;
+		}
 		case BC::F64Absolute:
 		case BC::F64Negate:
 		case BC::F64Ceil:
