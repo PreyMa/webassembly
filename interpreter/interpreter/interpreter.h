@@ -10,6 +10,8 @@ namespace WASM {
 
 		Value(ValType t, u64 data) : mType{ t }, u64Data{ data } {}
 
+		static Value fromStackPointer(ValType, std::span<u32>, u32&);
+
 		template<typename T>
 		static Value fromType(T val) {
 			return { ValType::fromType<T>(), reinterpret_cast<u64&>(val) };
@@ -19,7 +21,12 @@ namespace WASM {
 		u32 sizeInBytes() const { return mType.sizeInBytes(); }
 
 		u32 asU32() const { return u32Data; }
-		u32 asU64() const { return u64Data; }
+		u64 asU64() const { return u64Data; }
+
+		u64 asInt() const;
+		f64 asFloat() const;
+
+		void print(std::ostream&) const;
 
 	private:
 		ValType mType;

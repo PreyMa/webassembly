@@ -1255,20 +1255,88 @@ void ValuePack::print(std::ostream& out) const
 		types = functionType.parameters();
 	}
 
-	out << "(" << types.size() << " entries)" << std::endl << std::hex;
+	out << "(" << types.size() << " entries)" << std::endl;
 
 	u32 slotIdx = 0;
 	for (auto& valType : types) {
 		out << "  - ";
-		if (valType.sizeInBytes() == 4) {
-			out << valType.name() << " " << stackSlice[slotIdx] << std::endl;
-			slotIdx++;
-		}
-		else {
-			out << valType.name() << " " << *reinterpret_cast<u64*>(stackSlice.data()+ slotIdx) << std::endl;
-			slotIdx += 2;
-		}
+		Value::fromStackPointer(valType, stackSlice, slotIdx).print(out);
+		out << std::endl;
+	}
+}
+
+Value WASM::Value::fromStackPointer(ValType type, std::span<u32> stackSlice, u32& slotIdx)
+{
+	switch (type) {
+	case ValType::I32:
+	case ValType::F32: {
+		Value val{ type, stackSlice[slotIdx] };
+		slotIdx += 1;
+		return val;
 	}
 
-	out << std::dec;
+	case ValType::I64:
+	case ValType::F64:
+	case ValType::FuncRef:
+	case ValType::ExternRef: {
+		Value val{ type, *reinterpret_cast<u64*>(stackSlice.data() + slotIdx) };
+		slotIdx += 2;
+		return val;
+	}
+
+	case ValType::V128:
+		throw std::runtime_error{"Vector types are not supported when constructing values"};
+	default:
+		throw std::runtime_error{"Cannot construct value of unknown type"};
+	}
+}
+
+u64 WASM::Value::asInt() const
+{
+	if (mType == ValType::I32) {
+		return u32Data;
+	}
+
+	if (mType == ValType::I64) {
+		return u64Data;
+	}
+
+	throw std::runtime_error{ "Value is not an integer" };
+}
+
+f64 WASM::Value::asFloat() const
+{
+	if (mType == ValType::F32) {
+		return f32Data;
+	}
+
+	if (mType == ValType::F64) {
+		return f64Data;
+	}
+
+	throw std::runtime_error{ "Value is not a floating point number" };
+}
+
+void WASM::Value::print(std::ostream& out) const
+{
+	switch (mType) {
+	case ValType::I32:
+	case ValType::I64:
+		out << mType.name() << " " << asInt();
+		return;
+
+	case ValType::F32:
+	case ValType::F64:
+		out << mType.name() << " " << asFloat();
+		return;
+
+	case ValType::FuncRef:
+	case ValType::ExternRef:
+		out << mType.name() << " " << std::hex << u64Data << std::dec;
+		return;
+
+	case ValType::V128:
+	default:
+		throw std::runtime_error{ "Cannot print value of unsupported type" };
+	}
 }
