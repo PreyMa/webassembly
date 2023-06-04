@@ -416,11 +416,6 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 		pushPtr(stackPointerToSave);
 		pushPtr(memoryPointer);
 
-		// FIXME: This value should not need to be calculated
-		for (u32 i = 0; i != callee->localsSizeInBytes() / 4; i++) {
-			pushU32(0);
-		}
-
 		framePointer = newFramePointer;
 		instructionPointer = callee->bytecode().begin();
 		memoryPointer = nullptr;
