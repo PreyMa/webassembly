@@ -42,9 +42,8 @@ Interpreter::~Interpreter() = default;
 
 void Interpreter::loadModule(std::string path)
 {
-	// Loading another module might cause a reallocation in the modules vector, which
-	// would invalidate all the addresses in the bytecode
-	if (hasLinked) {
+	// Loading another module would invalidate all of the linking already done
+	if (hasLinkedAndCompiled) {
 		throw std::runtime_error{ "Cannot load module after linking step" };
 	}
 
@@ -65,7 +64,7 @@ void Interpreter::loadModule(std::string path)
 void WASM::Interpreter::registerHostModule(HostModule hostModule)
 {
 	// See: loadModule()
-	if (hasLinked) {
+	if (hasLinkedAndCompiled) {
 		throw std::runtime_error{ "Cannot register (host) module after linking step" };
 	}
 
@@ -76,7 +75,7 @@ void WASM::Interpreter::registerHostModule(HostModule hostModule)
 
 void Interpreter::compileAndLinkModules()
 {
-	if (hasLinked) {
+	if (hasLinkedAndCompiled) {
 		throw std::runtime_error{ "Already linked" };
 	}
 
@@ -92,7 +91,7 @@ void Interpreter::compileAndLinkModules()
 		compiler.compile();
 	}
 
-	hasLinked = true;
+	hasLinkedAndCompiled = true;
 }
 
 void Interpreter::runStartFunctions()

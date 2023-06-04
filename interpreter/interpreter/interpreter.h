@@ -121,7 +121,7 @@ namespace WASM {
 		SealedVector<LinkedElement> allElements;
 		SealedVector<LinkedDataItem> allDataItems;
 
-		bool hasLinked{ false };
+		bool hasLinkedAndCompiled{ false };
 		bool isInterpreting{ false };
 		std::unique_ptr<u32[]> mStackBase;
 		u32* mStackPointer;
