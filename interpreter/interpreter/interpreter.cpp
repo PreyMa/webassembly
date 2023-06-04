@@ -11,6 +11,24 @@
 
 using namespace WASM;
 
+template<typename U, typename T>
+__forceinline U truncateSaturate(T x) {
+	if (std::isnan(x)) {
+		return 0;
+	}
+
+	if (x < std::numeric_limits<U>::min()) {
+		return std::numeric_limits<U>::min();
+	}
+
+	if (x > std::numeric_limits<U>::max()) {
+		return std::numeric_limits<U>::max();
+	}
+
+	return x;
+}
+
+
 HostFunctionBase::HostFunctionBase(ModuleFunctionIndex idx, FunctionType ft)
 	: Function{ idx }, mFunctionType { std::move(ft) } {}
 
@@ -1515,13 +1533,37 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			pushU64((i64)((i32)opA));
 			continue;
 		case BC::I32TruncateSaturateF32S:
+			opA = popU32();
+			pushU32(truncateSaturate<i32, f32>(reinterpret_cast<f32&>(opA)));
+			continue;
 		case BC::I32TruncateSaturateF32U:
+			opA = popU32();
+			pushU32(truncateSaturate<u32, f32>(reinterpret_cast<f32&>(opA)));
+			continue;
 		case BC::I32TruncateSaturateF64S:
+			opA = popU64();
+			pushU32(truncateSaturate<i32, f64>(reinterpret_cast<f64&>(opA)));
+			continue;
 		case BC::I32TruncateSaturateF64U:
+			opA = popU64();
+			pushU32(truncateSaturate<u32, f64>(reinterpret_cast<f64&>(opA)));
+			continue;
 		case BC::I64TruncateSaturateF32S:
+			opA = popU32();
+			pushU64(truncateSaturate<i64, f32>(reinterpret_cast<f32&>(opA)));
+			continue;
 		case BC::I64TruncateSaturateF32U:
+			opA = popU32();
+			pushU64(truncateSaturate<u64, f32>(reinterpret_cast<f32&>(opA)));
+			continue;
 		case BC::I64TruncateSaturateF64S:
+			opA = popU64();
+			pushU64(truncateSaturate<i64, f64>(reinterpret_cast<f64&>(opA)));
+			continue;
 		case BC::I64TruncateSaturateF64U:
+			opA = popU64();
+			pushU64(truncateSaturate<u64, f64>(reinterpret_cast<f64&>(opA)));
+			continue;
 		default:
 			break;
 		}
