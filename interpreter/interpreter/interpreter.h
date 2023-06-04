@@ -53,10 +53,14 @@ namespace WASM {
 	};
 
 	class FunctionHandle {
+	public:
+		FunctionHandle(std::string n, Function& f)
+			: mName{ std::move(n) }, mFunction{ f } {}
 	private:
 		friend class Interpreter;
 
-		Function& function;
+		std::string mName;
+		Function& mFunction;
 	};
 
 	class Interpreter {
@@ -75,7 +79,7 @@ namespace WASM {
 		template<typename ...Args>
 		ValuePack runFunction(const FunctionHandle& handle, Args... args) {
 			std::array<Value, sizeof...(Args)> argumentArray{ Value::fromType<Args>( args )... };
-			return executeFunction(handle.function, argumentArray);
+			return executeFunction(handle.mFunction, argumentArray);
 		}
 
 		void attachIntrospector(std::unique_ptr<Introspector>);
@@ -97,6 +101,8 @@ namespace WASM {
 		ValuePack runInterpreterLoop(const BytecodeFunction&, std::span<Value>);
 
 		Nullable<Function> findFunction(const std::string&, const std::string&);
+		ModuleBase& findModule(const std::string&);
+
 		InterpreterTypeIndex indexOfFunctionType(const FunctionType&) const;
 		InterpreterFunctionIndex indexOfFunction(const BytecodeFunction&) const;
 		InterpreterMemoryIndex indexOfMemoryInstance(const Memory&) const;

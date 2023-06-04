@@ -8,6 +8,7 @@
 #include "interpreter.h"
 #include "introspection.h"
 #include "bytecode.h"
+#include "error.h"
 
 using namespace WASM;
 
@@ -94,6 +95,20 @@ void Interpreter::compileAndLinkModules()
 	hasLinkedAndCompiled = true;
 }
 
+FunctionHandle WASM::Interpreter::functionByName(std::string_view moduleName, std::string_view functionName)
+{
+	// FIXME: This std::string allocation is only required becaude ::find does not accept string_view keys
+	std::string moduleNameStr{ moduleName };
+	std::string functionNameStr{ functionName };
+
+	auto function= findModule(moduleNameStr).exportedFunctionByName(functionNameStr);
+	if (!function.has_value()) {
+		throw LookupError{ std::move(moduleNameStr), std::move(functionNameStr), "Unknown function name in module" };
+	}
+
+	return { std::move(functionNameStr), *function };
+}
+
 void Interpreter::runStartFunctions()
 {
 	for (auto& module : wasmModules) {
@@ -102,12 +117,6 @@ void Interpreter::runStartFunctions()
 			executeFunction(*startFunction, {});
 		}
 	}
-
-	/*auto func = wasmModules.front().functionByIndex(0);
-	assert(func.has_value() && func->asBytecodeFunction().has_value());
-
-	std::array<Value, 1> args{ Value::fromType<i32>(4) };
-	executeFunction(*func, args);*/
 }
 
 void Interpreter::attachIntrospector(std::unique_ptr<Introspector> introspector)
@@ -136,7 +145,9 @@ void Interpreter::registerModuleName(NonNull<ModuleBase> module)
 
 ValuePack Interpreter::executeFunction(Function& function, std::span<Value> values)
 {
-	assert(!isInterpreting);
+	if (isInterpreting) {
+		throw std::runtime_error{ "Recursive interpretation loops are currently not supported" };
+	}
 
 	auto bytecodeFunction = function.asBytecodeFunction();
 	if (bytecodeFunction.has_value()) {
@@ -144,11 +155,9 @@ ValuePack Interpreter::executeFunction(Function& function, std::span<Value> valu
 			throw std::runtime_error("Invalid arguments provided to bytecode function");
 		}
 
-		auto pack= runInterpreterLoop(*bytecodeFunction, values);
+		return runInterpreterLoop(*bytecodeFunction, values);
+	}
 
-		pack.print(std::cout);
-
-		return pack;
 	}
 
 	return ValuePack{ function.functionType(), true, {} };
@@ -162,6 +171,15 @@ Nullable<Function> Interpreter::findFunction(const std::string& moduleName, cons
 	}
 
 	return moduleFind->second->exportedFunctionByName(functionName);
+}
+
+ModuleBase& Interpreter::findModule(const std::string& moduleName) {
+	auto moduleFind = moduleNameMap.find(moduleName);
+	if (moduleFind == moduleNameMap.end()) {
+		throw LookupError{ moduleName, "Unknown module name" };
+	}
+
+	return *moduleFind->second;
 }
 
 InterpreterTypeIndex Interpreter::indexOfFunctionType(const FunctionType& funcType) const

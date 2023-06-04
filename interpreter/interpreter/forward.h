@@ -37,6 +37,9 @@ namespace WASM {
 	class Error;
 	class ParsingError;
 	class ValidationError;
+	class LinkError;
+	class CompileError;
+	class LookupError;
 
 	class InstructionType;
 	class Instruction;
@@ -47,6 +50,7 @@ namespace WASM {
 
 	class Value;
 	class ValuePack;
+	class FunctionHandle;
 	class Interpreter;
 
 	class Function;

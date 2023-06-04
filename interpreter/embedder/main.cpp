@@ -15,7 +15,7 @@ int main() {
 		auto logger = std::make_unique<WASM::ConsoleLogger>( std::cout );
 		interpreter.attachIntrospector(std::move(logger));
 
-		using WASM::u32, WASM::i64, WASM::f32, WASM::f64;
+		using WASM::u32, WASM::i64, WASM::f32, WASM::f64, WASM::i32;
 		WASM::HostModuleBuilder envModule{ "env" };
 		envModule
 			.defineFunction("abort", [&](u32, u32, u32, u32) { std::cout << "Abort called\n"; })
@@ -23,14 +23,25 @@ int main() {
 			.defineFunction("printFloat", [&](f64 val) { std::cout << "printFloat: " << val << std::endl; })
 			.defineFunction("vecSum", [&](f32 a, f32 b, f32 c) { return a + b + c; });
 
-		//interpreter.loadModule("C:/Users/Matthias/Documents/Uni/ABM/webassembly/webassembly/assemblyscript/helloworld/build/debug.wasm");
-		interpreter.loadModule("C:/Users/Matthias/Documents/Uni/ABM/webassembly/webassembly/assemblyscript/helloworld/build/release.wasm");
+		interpreter.loadModule("C:/Users/Matthias/Documents/Uni/ABM/webassembly/webassembly/assemblyscript/helloworld/build/debug.wasm");
+		//interpreter.loadModule("C:/Users/Matthias/Documents/Uni/ABM/webassembly/webassembly/assemblyscript/helloworld/build/release.wasm");
 		//interpreter.loadModule("C:/Users/Matthias/Documents/Uni/ABM/webassembly/webassembly/assemblyscript/ying/build/ying.debug.wasm");
 		//interpreter.loadModule("C:/Users/Matthias/Documents/Uni/ABM/webassembly/webassembly/assemblyscript/yang/build/yang.debug.wasm");
 		interpreter.registerHostModule(envModule.toModule());
 		interpreter.compileAndLinkModules();
 
 		interpreter.runStartFunctions();
+
+		//auto aFunction= interpreter.functionByName("debug", "fptest");
+		//auto result= interpreter.runFunction(aFunction, (f32)5);
+		
+		auto aFunction = interpreter.functionByName("debug", "kekdreck");
+		auto result = interpreter.runFunction(aFunction, (i32) 127);
+
+		
+		std::cout << "Results: " << std::endl;
+		result.print(std::cout);
+
 	}
 	catch (WASM::Error& e) {
 		std::cerr << "\n\n========================================\n" << std::endl;

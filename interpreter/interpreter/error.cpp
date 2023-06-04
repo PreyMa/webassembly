@@ -48,3 +48,13 @@ void WASM::LinkError::print(std::ostream& o) const
 
 	o << " while linking to '" << importItemName << "': " << message;
 }
+
+void WASM::LookupError::print(std::ostream& o) const
+{
+	if (!itemName.has_value()) {
+		o << "Lookup error for module '" << moduleName << "': " << message;
+		return;
+	}
+
+	o << "Lookup error in module '" << moduleName << "' for item " << "'" << *itemName << "': " << message;
+}

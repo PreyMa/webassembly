@@ -70,6 +70,21 @@ namespace WASM {
 		std::string moduleName;
 		std::optional<ModuleFunctionIndex> functionIndex;
 	};
+
+	class LookupError : public Error {
+	public:
+		LookupError(std::string mod, std::string m)
+			: Error{ std::move(m) }, moduleName{ mod } {}
+
+		LookupError(std::string mod, std::string item, std::string m)
+			: Error{ std::move(m) }, moduleName{ mod }, itemName{ std::move(item) } {}
+
+		virtual void print(std::ostream& o) const override;
+
+	private:
+		std::string moduleName;
+		std::optional<std::string> itemName;
+	};
 }
 
 std::ostream& operator<<(std::ostream&, const WASM::Error&);
