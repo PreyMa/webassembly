@@ -684,37 +684,176 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 		case BC::TableGrow:
 		case BC::TableSize:
 		case BC::TableFill:
-		case BC::I32LoadNear:
-		case BC::I64LoadNear:
-		case BC::I32LoadFar:
-		case BC::I64LoadFar:
-		case BC::I32Load8s:
-		case BC::I32Load8u:
-		case BC::I32Load16s:
-		case BC::I32Load16u:
-		case BC::I64Load8s:
-		case BC::I64Load8u:
-		case BC::I64Load16s:
-		case BC::I64Load16u:
-		case BC::I64Load32s:
-		case BC::I64Load32u:
 			break;
+		case BC::I32LoadNear:
+			assert(memoryPointer);
+			opB = *(instructionPointer++);
+			opA = popU32();
+			pushU32(*reinterpret_cast<u32*>(memoryPointer->pointer(opB + opA)));
+			// std::cout << "Load [" << opB + opA << "] --> " << stackPointer[-1] << std::endl;
+			continue;
+		case BC::I64LoadNear:
+			assert(memoryPointer);
+			opB = *(instructionPointer++);
+			opA = popU32();
+			pushU64(*reinterpret_cast<u64*>(memoryPointer->pointer(opB + opA)));
+			continue;
+		case BC::I32LoadFar:
+			assert(memoryPointer);
+			opB = loadOperandU32();
+			opA = popU32();
+			pushU32(*reinterpret_cast<u32*>(memoryPointer->pointer(opB + opA)));
+			continue;
+		case BC::I64LoadFar:
+			assert(memoryPointer);
+			opB = loadOperandU32();
+			opA = popU32();
+			pushU64(*reinterpret_cast<u64*>(memoryPointer->pointer(opB + opA)));
+			continue;
+		case BC::I32Load8s: {
+			assert(memoryPointer);
+			opB = loadOperandU32();
+			opA = popU32();
+			i32 val = *reinterpret_cast<i8*>(memoryPointer->pointer(opB + opA));
+			pushU32(val);
+			continue;
+		}
+		case BC::I32Load8u: {
+			assert(memoryPointer);
+			opB = loadOperandU32();
+			opA = popU32();
+			u32 val = *reinterpret_cast<u8*>(memoryPointer->pointer(opB + opA));
+			pushU32(val);
+			continue;
+		}
+		case BC::I32Load16s: {
+			assert(memoryPointer);
+			opB = loadOperandU32();
+			opA = popU32();
+			i32 val = *reinterpret_cast<i16*>(memoryPointer->pointer(opB + opA));
+			pushU32(val);
+			continue;
+		}
+		case BC::I32Load16u: {
+			assert(memoryPointer);
+			opB = loadOperandU32();
+			opA = popU32();
+			u32 val = *reinterpret_cast<u16*>(memoryPointer->pointer(opB + opA));
+			pushU32(val);
+			continue;
+		}
+		case BC::I64Load8s: {
+			assert(memoryPointer);
+			opB = loadOperandU32();
+			opA = popU32();
+			i64 val = *reinterpret_cast<i8*>(memoryPointer->pointer(opB + opA));
+			pushU64(val);
+			continue;
+		}
+		case BC::I64Load8u: {
+			assert(memoryPointer);
+			opB = loadOperandU32();
+			opA = popU32();
+			u64 val = *reinterpret_cast<u8*>(memoryPointer->pointer(opB + opA));
+			pushU64(val);
+			continue;
+		}
+		case BC::I64Load16s: {
+			assert(memoryPointer);
+			opB = loadOperandU32();
+			opA = popU32();
+			i64 val = *reinterpret_cast<i16*>(memoryPointer->pointer(opB + opA));
+			pushU64(val);
+			continue;
+		}
+		case BC::I64Load16u: {
+			assert(memoryPointer);
+			opB = loadOperandU32();
+			opA = popU32();
+			u64 val = *reinterpret_cast<u16*>(memoryPointer->pointer(opB + opA));
+			pushU64(val);
+			continue;
+		}
+		case BC::I64Load32s: {
+			assert(memoryPointer);
+			opB = loadOperandU32();
+			opA = popU32();
+			i64 val = *reinterpret_cast<i32*>(memoryPointer->pointer(opB + opA));
+			pushU64(val);
+			continue;
+		}
+		case BC::I64Load32u: {
+			assert(memoryPointer);
+			opB = loadOperandU32();
+			opA = popU32();
+			u64 val = *reinterpret_cast<u32*>(memoryPointer->pointer(opB + opA));
+			pushU64(val);
+			continue;
+		}
 		case BC::I32StoreNear:
 			assert(memoryPointer);
 			opC = *(instructionPointer++);
 			opB = popU32();
 			opA = popU32();
-			*reinterpret_cast<u32*>(memoryPointer->pointer(opC + opA)) = opB;
+			*reinterpret_cast<u32*>(memoryPointer->pointer(opC + opA)) = (u32) opB;
+			// std::cout << "STORE [" << opC + opA << "] <-- " << opB << std::endl;
 			continue;
 		case BC::I64StoreNear:
+			assert(memoryPointer);
+			opC = *(instructionPointer++);
+			opB = popU64();
+			opA = popU32();
+			*reinterpret_cast<u64*>(memoryPointer->pointer(opC + opA)) = opB;
+			continue;
 		case BC::I32StoreFar:
+			assert(memoryPointer);
+			opC = loadOperandU32();
+			opB = popU32();
+			opA = popU32();
+			*reinterpret_cast<u32*>(memoryPointer->pointer(opC + opA)) = (u32)opB;
+			continue;
 		case BC::I64StoreFar:
+			assert(memoryPointer);
+			opC = loadOperandU32();
+			opB = popU64();
+			opA = popU32();
+			*reinterpret_cast<u64*>(memoryPointer->pointer(opC + opA)) = opB;
+			continue;
 		case BC::I32Store8:
+			assert(memoryPointer);
+			opC = loadOperandU32();
+			opB = popU32();
+			opA = popU32();
+			*reinterpret_cast<u8*>(memoryPointer->pointer(opC + opA)) = (u8)opB;
+			continue;
 		case BC::I32Store16:
+			assert(memoryPointer);
+			opC = loadOperandU32();
+			opB = popU32();
+			opA = popU32();
+			*reinterpret_cast<u16*>(memoryPointer->pointer(opC + opA)) = (u16)opB;
+			continue;
 		case BC::I64Store8:
+			assert(memoryPointer);
+			opC = loadOperandU32();
+			opB = popU64();
+			opA = popU32();
+			*reinterpret_cast<u8*>(memoryPointer->pointer(opC + opA)) = (u8)opB;
+			continue;
 		case BC::I64Store16:
+			assert(memoryPointer);
+			opC = loadOperandU32();
+			opB = popU64();
+			opA = popU32();
+			*reinterpret_cast<u16*>(memoryPointer->pointer(opC + opA)) = (u16)opB;
+			continue;
 		case BC::I64Store32:
-			break;
+			assert(memoryPointer);
+			opC = loadOperandU32();
+			opB = popU64();
+			opA = popU32();
+			*reinterpret_cast<u32*>(memoryPointer->pointer(opC + opA)) = (u32)opB;
+			continue;
 		case BC::MemorySize: {
 			assert(memoryPointer);
 			pushU32(memoryPointer->currentSize());
@@ -725,6 +864,7 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 		case BC::DataDrop:
 		case BC::MemoryCopy:
 		case BC::MemoryFill:
+			break;
 		case BC::I32ConstShort:
 			pushU32(*(instructionPointer++));
 			continue;
