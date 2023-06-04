@@ -283,8 +283,8 @@ void Interpreter::dumpStack(std::ostream& out) const
 				out << "  " << (u64)--stackPointer << " (-" << std::setw(2) << ++stackPointerOffset << ") " << name << ": " << *reinterpret_cast<u64**>(stackPointer) << std::endl;
 			};
 
-			auto printTypedLocals = [&](const char* const name, sizeType endIdx, sizeType beginIdx) {
-				for (sizeType i = endIdx - 1; i >= beginIdx; i--) {
+			auto printTypedLocals = [&](const char* const name, i64 endIdx, i64 beginIdx) {
+				for (i64 i = endIdx - 1; i >= beginIdx; i--) {
 					auto localOffset = bytecodeFunction->localOrParameterByIndex(i);
 					assert(localOffset.has_value());
 					if (localOffset->type.sizeInBytes() == 4) {

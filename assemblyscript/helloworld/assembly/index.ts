@@ -31,7 +31,7 @@ export function isGreater( a: i32 ) : boolean {
 
   return a < 10;
 }
-
+*/
 export function calcThing( a: i32 ) : i32 {
   let i= 0
   a= a < 0 ? -a : a;
@@ -40,7 +40,7 @@ export function calcThing( a: i32 ) : i32 {
     a/=2
   }
   return i
-}
+}/*
 
 export function create( x: u32 ) : SampleClass {
   return x ? new SampleClass( x ) : new SampleDerivedClass( x );
