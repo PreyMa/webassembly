@@ -1173,21 +1173,98 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			pushU32(reinterpret_cast<u32&>(result));
 			continue;
 		}
-		case BC::F64Absolute:
-		case BC::F64Negate:
-		case BC::F64Ceil:
-		case BC::F64Floor:
-		case BC::F64Truncate:
-		case BC::F64Nearest:
-		case BC::F64SquareRoot:
-		case BC::F64Add:
-		case BC::F64Subtract:
-		case BC::F64Multiply:
-		case BC::F64Divide:
-		case BC::F64Minimum:
-		case BC::F64Maximum:
-		case BC::F64CopySign:
-			break;
+		case BC::F64Absolute: {
+			opA = popU64();
+			f64 abs = std::abs(reinterpret_cast<f64&>(opA));
+			pushU64(reinterpret_cast<u64&>(abs));
+			continue;
+		}
+		case BC::F64Negate: {
+			opA = popU64();
+			f64 neg = -reinterpret_cast<f64&>(opA);
+			pushU64(reinterpret_cast<u64&>(neg));
+			continue;
+		}
+		case BC::F64Ceil: {
+			opA = popU64();
+			f64 ceiled = std::ceil(reinterpret_cast<f64&>(opA));
+			pushU64(reinterpret_cast<u64&>(ceiled));
+			continue;
+		}
+		case BC::F64Floor: {
+			opA = popU64();
+			f64 floored = std::floor(reinterpret_cast<f64&>(opA));
+			pushU64(reinterpret_cast<u64&>(floored));
+			continue;
+		}
+		case BC::F64Truncate: {
+			opA = popU64();
+			f64 truncated = std::trunc(reinterpret_cast<f64&>(opA));
+			pushU64(reinterpret_cast<u64&>(truncated));
+			continue;
+		}
+		case BC::F64Nearest: {
+			// FIXME: Same issue as BC::F32Nearest
+			opA = popU64();
+			f64 rounded = std::round(reinterpret_cast<f64&>(opA));
+			pushU64(reinterpret_cast<u64&>(rounded));
+			continue;
+		}
+		case BC::F64SquareRoot: {
+			opA = popU64();
+			f64 root = std::sqrt(reinterpret_cast<f64&>(opA));
+			pushU64(reinterpret_cast<u64&>(root));
+			continue;
+		}
+		case BC::F64Add: {
+			opB = popU64();
+			opA = popU64();
+			f64 result = reinterpret_cast<f64&>(opA) + reinterpret_cast<f64&>(opB);
+			pushU64(reinterpret_cast<u64&>(result));
+			continue;
+		}
+		case BC::F64Subtract: {
+			opB = popU64();
+			opA = popU64();
+			f64 result = reinterpret_cast<f64&>(opA) - reinterpret_cast<f64&>(opB);
+			pushU64(reinterpret_cast<u64&>(result));
+			continue;
+		}
+		case BC::F64Multiply: {
+			opB = popU64();
+			opA = popU64();
+			f64 result = reinterpret_cast<f64&>(opA) * reinterpret_cast<f64&>(opB);
+			pushU64(reinterpret_cast<u64&>(result));
+			continue;
+		}
+		case BC::F64Divide: {
+			opB = popU64();
+			opA = popU64();
+			f64 result = reinterpret_cast<f64&>(opA) / reinterpret_cast<f64&>(opB);
+			pushU64(reinterpret_cast<u64&>(result));
+			continue;
+		}
+		case BC::F64Minimum: {
+			opB = popU64();
+			opA = popU64();
+			f64 result = std::min(reinterpret_cast<f64&>(opA), reinterpret_cast<f64&>(opB));
+			pushU64(reinterpret_cast<u64&>(result));
+			continue;
+		}
+		case BC::F64Maximum: {
+			opB = popU64();
+			opA = popU64();
+			f64 result = std::max(reinterpret_cast<f64&>(opA), reinterpret_cast<f64&>(opB));
+			pushU64(reinterpret_cast<u64&>(result));
+			continue;
+		}
+		case BC::F64CopySign: {
+			opB = popU64();
+			opA = popU64();
+			f64 result = std::copysign(reinterpret_cast<f64&>(opA), reinterpret_cast<f64&>(opB));
+			pushU64(reinterpret_cast<u64&>(result));
+			continue;
+		}
 		case BC::I32WrapI64:
 			opA = popU64();
 			pushU32((u32)opA);
