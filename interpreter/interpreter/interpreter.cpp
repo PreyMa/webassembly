@@ -149,18 +149,26 @@ ValuePack Interpreter::executeFunction(Function& function, std::span<Value> valu
 		throw std::runtime_error{ "Recursive interpretation loops are currently not supported" };
 	}
 
+	if (!function.functionType().takesValuesAsParameters(values)) {
+		throw std::runtime_error("Invalid arguments provided to function");
+	}
+
 	auto bytecodeFunction = function.asBytecodeFunction();
 	if (bytecodeFunction.has_value()) {
-		if(!bytecodeFunction->functionType().takesValuesAsParameters(values)) {
-			throw std::runtime_error("Invalid arguments provided to bytecode function");
-		}
-
 		return runInterpreterLoop(*bytecodeFunction, values);
 	}
 
+	if (!mStackBase) {
+		// FIXME: Do not hardcode stack size
+		mStackBase= std::make_unique<u32[]>(4096);
 	}
 
-	return ValuePack{ function.functionType(), true, {} };
+	auto hostFunction = function.asHostFunction();
+	assert(hostFunction.has_value());
+	auto stackPointer= hostFunction->executeFunction(values, mStackBase.get());
+
+	return ValuePack{ function.functionType(), true, {mStackBase.get(), (sizeType)(stackPointer - mStackBase.get())} };
+
 }
 
 Nullable<Function> Interpreter::findFunction(const std::string& moduleName, const std::string& functionName)
@@ -232,12 +240,10 @@ InterpreterLinkedDataIndex WASM::Interpreter::indexOfLinkedDataItem(const Linked
 
 void Interpreter::initState(const BytecodeFunction& function)
 {
-	if (mStackBase) {
-		return;
+	if (!mStackBase) {
+		// FIXME: Do not hard code the stack size
+		mStackBase = std::make_unique<u32[]>(4096);
 	}
-
-	// FIXME: Do not hard code the stack size
-	mStackBase = std::make_unique<u32[]>(4096);
 
 	mInstructionPointer = function.bytecode().begin();
 	mStackPointer = mStackBase.get();
@@ -463,10 +469,10 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 	for (auto& parameter : parameters) {
 		auto numBytes = parameter.sizeInBytes();
 		if ( numBytes == 4) {
-			pushU32(parameter.asU32());
+			pushU32(parameter.as<u32>());
 		}
 		else if (numBytes == 8) {
-			pushU64(parameter.asU64());
+			pushU64(parameter.as<u64>());
 		}
 		else {
 			throw std::runtime_error{ "Only 32bit and 64bit values are supported" };
@@ -1609,7 +1615,11 @@ void ValuePack::print(std::ostream& out) const
 	u32 slotIdx = 0;
 	for (auto& valType : types) {
 		out << "  - ";
-		Value::fromStackPointer(valType, stackSlice, slotIdx).print(out);
+		if (slotIdx < stackSlice.size()) {
+			Value::fromStackPointer(valType, stackSlice, slotIdx).print(out);
+		}
+		else {
+			out << "<missing value>";		}
 		out << std::endl;
 	}
 }

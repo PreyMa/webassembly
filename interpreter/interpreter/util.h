@@ -23,7 +23,9 @@ namespace WASM {
 	namespace Detail {
 
 		template<typename ...T>
-		struct ParameterPack {};
+		struct ParameterPack {
+			static constexpr sizeType Size = sizeof...(T);
+		};
 
 		// Based on https://stackoverflow.com/questions/64782121/deduce-lambda-return-and-arguments-passed-to-constructor
 		template<typename>

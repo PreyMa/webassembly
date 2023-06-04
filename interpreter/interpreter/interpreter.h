@@ -5,53 +5,6 @@
 #include "host_module.h"
 
 namespace WASM {
-	class Value {
-	public:
-
-		Value(ValType t, u64 data) : mType{ t }, u64Data{ data } {}
-
-		static Value fromStackPointer(ValType, std::span<u32>, u32&);
-
-		template<typename T>
-		static Value fromType(T val) {
-			return { ValType::fromType<T>(), reinterpret_cast<u64&>(val) };
-		}
-
-		auto type() const { return mType; }
-		u32 sizeInBytes() const { return mType.sizeInBytes(); }
-
-		u32 asU32() const { return u32Data; }
-		u64 asU64() const { return u64Data; }
-
-		u64 asInt() const;
-		f64 asFloat() const;
-
-		void print(std::ostream&) const;
-
-	private:
-		ValType mType;
-		union {
-			u32 u32Data;
-			u64 u64Data;
-			f32 f32Data;
-			f64 f64Data;
-			Function* refData;
-		};
-	};
-
-	class ValuePack {
-	public:
-		ValuePack(const FunctionType& ft, bool r, std::span<u32> s)
-			: functionType{ ft }, isResult{ r }, stackSlice{ s } {}
-
-		void print(std::ostream&) const;
-
-	private:
-		const FunctionType& functionType;
-		bool isResult;
-		std::span<u32> stackSlice;
-	};
-
 	class FunctionHandle {
 	public:
 		FunctionHandle(std::string n, Function& f)

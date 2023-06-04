@@ -35,8 +35,8 @@ int main() {
 		//auto aFunction= interpreter.functionByName("debug", "fptest");
 		//auto result= interpreter.runFunction(aFunction, (f32)5);
 		
-		auto aFunction = interpreter.functionByName("debug", "kekdreck");
-		auto result = interpreter.runFunction(aFunction, (i32) 127);
+		auto aFunction = interpreter.functionByName("env", "vecSum");
+		auto result = interpreter.runFunction(aFunction, 1.0f, 2.0f, 2.5f);
 
 		
 		std::cout << "Results: " << std::endl;

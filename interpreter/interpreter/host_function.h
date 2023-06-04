@@ -3,6 +3,7 @@
 #include <tuple>
 
 #include "module.h"
+#include "value.h"
 
 namespace WASM {
 
@@ -19,6 +20,7 @@ namespace WASM {
 		void print(std::ostream&) const;
 
 		virtual u32* executeFunction(u32*)= 0;
+		virtual u32* executeFunction(std::span<Value>, u32*) = 0;
 
 	protected:
 
@@ -38,6 +40,14 @@ namespace WASM {
 
 		virtual u32* executeFunction(u32* stackPointer) override {
 			return ParameterPopper<typename TTyper::Parameters>::popParametersAndCall(stackPointer, *this);
+		}
+
+		virtual u32* executeFunction(std::span<Value> params, u32* stackPointer) override {
+			if (params.size() < TTyper::Parameters::Size) {
+				throw std::runtime_error{"Parameter count mismatch for host function call"};
+			}
+
+			return ParameterReader<typename TTyper::Parameters>::readParametersAndCall(params, stackPointer, *this);
 		}
 
 	protected:
@@ -107,6 +117,7 @@ namespace WASM {
 
 		// Stack handling infrastructure for popping/pushing call parameters/results
 
+		// Pop the parameters from the stack
 		template<typename ... Us, typename ...Vs>
 		static u32* callAfterPoppingParameters(u32* stackPointer, HostFunction& self, Vs ... params) {
 			if constexpr (sizeof...(Us) == 0) {
@@ -125,6 +136,25 @@ namespace WASM {
 			return callAfterPoppingParameters<Us...>(stackPointer, self, params..., param);
 		}
 
+		// Read the parameters from the parameters array
+		template<typename ... Us, typename ...Vs>
+		static u32* callAfterReadingParameters(const std::span<Value>& paramArray, u32* stackPointer, HostFunction& self, Vs ... params) {
+			if constexpr (sizeof...(Us) == 0) {
+				return CallerAndResultPusher<typename TTyper::Result>::callAndPushResults(stackPointer, self, params...);
+			}
+			else {
+				return readNextParameter<Us...>(paramArray, stackPointer, self, params...);
+			}
+		}
+
+		template<typename U, typename ... Us, typename ...Vs>
+		static u32* readNextParameter(const std::span<Value>& paramArray, u32* stackPointer, HostFunction& self, Vs ... params) {
+			constexpr sizeType idx = sizeof...(params);
+			U param = paramArray[idx].as<U>();
+			return callAfterReadingParameters<Us...>(paramArray, stackPointer, self, params..., param);
+		}
+
+		// Push the result to stack
 		template<typename U>
 		static u32* pushResult(u32* stackPointer, U val) {
 			*reinterpret_cast<U*>(stackPointer) = val;
@@ -144,6 +174,8 @@ namespace WASM {
 			}
 		}
 
+		// Pop paramters from the stack depending on the function's 
+		// paramter types and do the function call
 		template<typename>
 		struct ParameterPopper {};
 
@@ -154,6 +186,19 @@ namespace WASM {
 			}
 		};
 
+		// Load the paramters from a span of values depending on the function's 
+		// paramter types and do the function call
+		template<typename>
+		struct ParameterReader {};
+
+		template<typename ...Us>
+		struct ParameterReader<Detail::ParameterPack<Us...>> {
+			static u32* readParametersAndCall(const std::span<Value>& paramArray, u32* stackPointer, HostFunction& self) {
+				return callAfterReadingParameters<Us...>(paramArray, stackPointer, self);
+			}
+		};
+
+		// Push the return value to the stack depending on the function's return type
 		template<typename U>
 		struct CallerAndResultPusher {
 			template<typename ...Vs>
