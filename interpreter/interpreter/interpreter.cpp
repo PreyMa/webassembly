@@ -586,11 +586,9 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 		}
 		case BC::I32Drop:
 			stackPointer--;
-			instructionPointer++;
 			continue;
 		case BC::I64Drop:
 			stackPointer -= 2;
-			instructionPointer++;
 			continue;
 		case BC::I32Select:
 			opC = popU32();
