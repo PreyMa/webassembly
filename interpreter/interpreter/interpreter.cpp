@@ -911,7 +911,7 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			pushU64(*(instructionPointer++));
 			continue;
 		case BC::I64ConstLong:
-			pushU32(loadOperandU64());
+			pushU64(loadOperandU64());
 			continue;
 		case BC::I32EqualZero:
 			opA = popU32();
