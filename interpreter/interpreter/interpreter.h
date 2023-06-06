@@ -22,7 +22,7 @@ namespace WASM {
 		~Interpreter();
 
 		void loadModule(std::string);
-		void registerHostModule(HostModule);
+		HostModuleHandle registerHostModule(HostModuleBuilder&);
 		void compileAndLinkModules();
 
 		FunctionHandle functionByName(std::string_view, std::string_view);
@@ -39,6 +39,7 @@ namespace WASM {
 
 	private:
 		friend class Module;
+		friend class HostModule;
 		friend class ModuleLinker;
 		friend class ModuleCompiler;
 		friend class DataItem;

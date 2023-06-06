@@ -16,32 +16,33 @@ int main() {
 		interpreter.attachIntrospector(std::move(logger));
 
 		using WASM::u32, WASM::i64, WASM::f32, WASM::f64, WASM::i32;
-		WASM::HostModuleBuilder envModule{ "env" };
-		envModule
+		WASM::HostModuleBuilder envModuleBuilder{ "env" };
+		envModuleBuilder
 			.defineFunction("abort", [&](u32, u32, u32, u32) { std::cout << "Abort called\n"; })
 			.defineFunction("printInt", [&](i64 val) { std::cout << "printInt: " << val << std::endl; })
 			.defineFunction("printFloat", [&](f64 val) { std::cout << "printFloat: " << val << std::endl; })
-			.defineFunction("vecSum", [&](f32 a, f32 b, f32 c) { return a + b + c; });
+			.defineFunction("vecSum", [&](f32 a, f32 b, f32 c) { return a + b + c; })
+			.defineMemory("memory", 1024)
+			.defineGlobal("myGlobal", WASM::ValType::I32);
 
 		interpreter.loadModule("C:/Users/Matthias/Documents/Uni/ABM/webassembly/webassembly/assemblyscript/helloworld/build/debug.wasm");
 		//interpreter.loadModule("C:/Users/Matthias/Documents/Uni/ABM/webassembly/webassembly/assemblyscript/helloworld/build/release.wasm");
 		//interpreter.loadModule("C:/Users/Matthias/Documents/Uni/ABM/webassembly/webassembly/assemblyscript/ying/build/ying.debug.wasm");
 		//interpreter.loadModule("C:/Users/Matthias/Documents/Uni/ABM/webassembly/webassembly/assemblyscript/yang/build/yang.debug.wasm");
-		interpreter.registerHostModule(envModule.toModule());
+		
+		auto envModule= interpreter.registerHostModule(envModuleBuilder);
 		interpreter.compileAndLinkModules();
 
 		interpreter.runStartFunctions();
 
 		//auto aFunction= interpreter.functionByName("debug", "fptest");
 		//auto result= interpreter.runFunction(aFunction, (f32)5);
-		
-		auto aFunction = interpreter.functionByName("env", "vecSum");
-		auto result = interpreter.runFunction(aFunction, 1.0f, 2.0f, 2.5f);
+		// result.print(std::cout);
 
-		
-		std::cout << "Results: " << std::endl;
-		result.print(std::cout);
+		auto memory= envModule.hostMemoryByName("memory");
+		// memory->memoryView<WASM::u16>();
 
+		auto global = envModule.hostGlobalByName("myGlobal");
 	}
 	catch (WASM::Error& e) {
 		std::cerr << "\n\n========================================\n" << std::endl;

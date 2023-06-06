@@ -58,7 +58,26 @@ namespace WASM {
 
 		SealedUnorderedMap& operator=(SealedUnorderedMap m) { map = std::move(m.map); return *this; }
 
+		using iterator = typename std::unordered_map<K, V>::iterator;
+
 	private:
 		std::unordered_map<K, V> map;
+	};
+
+	template<typename T>
+	class SealedOptional {
+	public:
+		SealedOptional(std::optional<T> o) : optional{ std::move(o) } {}
+		SealedOptional() = default;
+		SealedOptional(SealedOptional&&) = default;
+		SealedOptional(const SealedOptional&) = default;
+
+		bool has_value() const { return optional.has_value(); }
+		T& value() { return optional.value(); }
+		T& operator*() { return optional.value(); }
+		T* operator->() { return &optional.value(); }
+
+	private:
+		std::optional<T> optional;
 	};
 }

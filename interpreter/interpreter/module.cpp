@@ -251,9 +251,53 @@ std::optional<u64> Memory::maxBytes() const {
 	return {};
 }
 
-sizeType Memory::currentSize() const
+sizeType Memory::currentSizeInPages() const
 {
 	return mData.size() / PageSize;
+}
+
+sizeType WASM::Memory::currentSizeInBytes() const
+{
+	return mData.size();
+}
+
+
+void WASM::ModuleBase::createMemoryBase(const MemoryType& memoryType, ModuleLinker& linker, Nullable<Introspector> introspector)
+{
+	auto& memories = linker.createMemory();
+	mMemoryIndex = InterpreterMemoryIndex{ (u32)memories.size() };
+
+	memories.emplace_back(ModuleMemoryIndex{ 0 }, memoryType.limits());
+}
+
+void WASM::ModuleBase::createGlobalsBase(VirtualForwardIterator<DeclaredGlobalBase>& globals, ModuleLinker& linker, Nullable<Introspector> introspector)
+{
+	// Count the number of 32bit and 64bit globals, assign absolute indices
+	u32 num32BitGlobals = 0;
+	u32 num64BitGlobals = 0;
+	for (auto& global : globals) {
+		auto size = global.valType().sizeInBytes();
+		if (size == 4) {
+			InterpreterGlobalTypedArrayIndex idx{ (u32)linker.currentNumGlobals32() + num32BitGlobals++ };
+			global.setIndexInTypedStorageArray(idx);
+		}
+		else if (size == 8) {
+			InterpreterGlobalTypedArrayIndex idx{ (u32)linker.currentNumGlobals64() + num64BitGlobals++ };
+			global.setIndexInTypedStorageArray(idx);
+		}
+		else {
+			throw ValidationError{ std::string{name()}, "Only globals with 32bits and 64bits are supported"};
+		}
+	}
+
+	// Allocate slots for the globals and init them with 0
+	auto& globals32bit = linker.createGlobals32(num32BitGlobals);
+	mGlobals32.init(globals32bit, num32BitGlobals);
+	globals32bit.insert(globals32bit.end(), num32BitGlobals, {});
+
+	auto& globals64bit = linker.createGlobals64(num64BitGlobals);
+	mGlobals64.init(globals64bit, num64BitGlobals);
+	globals64bit.insert(globals64bit.end(), num64BitGlobals, {});
 }
 
 Module::Module(
@@ -264,7 +308,7 @@ Module::Module(
 	std::unique_ptr<ParsingState> s,
 	ExportTable e
 )
-	: mInterpreter{ i },
+	: ModuleBase{ i },
 	mPath{ std::move(p) },
 	mName{ std::move(n) },
 	mData{ std::move(b) },
@@ -304,10 +348,7 @@ void WASM::Module::createMemory(ModuleLinker& linker, Nullable<Introspector> int
 {
 	auto& memoryTypes = compilationData->memoryTypes();
 	if (!memoryTypes.empty()) {
-		auto& memories = linker.createMemory();
-		mMemoryIndex = InterpreterMemoryIndex{ (u32)memories.size() };
-		
-		memories.emplace_back(ModuleMemoryIndex{ 0 }, memoryTypes[0].limits());
+		createMemoryBase(memoryTypes.front(), linker, introspector);
 	}
 }
 
@@ -404,32 +445,9 @@ void Module::createGlobals(ModuleLinker& linker, Nullable<Introspector> introspe
 	// FIXME: Find something better than this const cast
 	auto& globals = const_cast<std::vector<DeclaredGlobal>&>(compilationData->globals());
 
-	// Count the number of 32bit and 64bit globals, assign relative indices
-	u32 num32BitGlobals = 0;
-	u32 num64BitGlobals = 0;
-	for (auto& global : globals) {
-		auto size = global.valType().sizeInBytes();
-		if (size == 4) {
-			InterpreterGlobalTypedArrayIndex idx{ num32BitGlobals++ };
-			global.setIndexInTypedStorageArray(idx);
-		}
-		else if (size == 8) {
-			InterpreterGlobalTypedArrayIndex idx{ num64BitGlobals++ };
-			global.setIndexInTypedStorageArray(idx);
-		}
-		else {
-			throw ValidationError{ compilationData->path(), "Only globals with 32bits and 64bits are supported" };
-		}
-	}
-
-	// Allocate slots for the globals and init them with 0
-	auto& globals32bit = linker.createGlobals32(num32BitGlobals);
-	mGlobals32.init(globals32bit, num32BitGlobals);
-	globals32bit.insert(globals32bit.end(), num32BitGlobals, {});
-
-	auto& globals64bit = linker.createGlobals64(num64BitGlobals);
-	mGlobals64.init(globals64bit, num64BitGlobals);
-	globals64bit.insert(globals64bit.end(), num64BitGlobals, {});
+	VirtualSpan<DeclaredGlobalBase> globalsSpan{ globals };
+	TypedVirtualForwardIterator globalsIter{ globalsSpan };
+	createGlobalsBase(globalsIter, linker, introspector);
 }
 
 void WASM::Module::instantiate(ModuleLinker& linker, Nullable<Introspector> introspector)
@@ -627,7 +645,33 @@ Nullable<const std::string> Module::functionNameByIndex(ModuleFunctionIndex func
 	return fnd->second;
 }
 
-HostModule HostModuleBuilder::toModule() {
+HostModuleBuilder& WASM::HostModuleBuilder::defineGlobal(std::string name, ValType type, u64 initValue, bool isMutable)
+{
+	auto [elem, didInsert] = mGlobals.emplace(std::move(name), HostGlobal{ GlobalType{type, isMutable}, initValue });
+	if (!didInsert) {
+		throw std::runtime_error{ "A host global with this name already exists" };
+	}
+
+	return *this;
+}
+
+HostModuleBuilder& WASM::HostModuleBuilder::defineMemory(std::string name, u32 minSize, std::optional<u32> maxSize)
+{
+	if (mMemory.has_value()) {
+		throw std::runtime_error{ "The host module already has a memory" };
+	}
+
+	if (maxSize.has_value()) {
+		mMemory.emplace(std::move(name), HostMemory{minSize, *maxSize});
+	}
+	else {
+		mMemory.emplace(std::move(name), HostMemory{minSize});
+	}
+	
+	return *this;
+}
+
+HostModule HostModuleBuilder::toModule(Interpreter& interpreter) {
 	u32 idx = 0;
 	for (auto& function : mFunctions) {
 		ModuleFunctionIndex funcIdx{ idx++ };
@@ -635,32 +679,32 @@ HostModule HostModuleBuilder::toModule() {
 	}
 
 	return HostModule{
+		interpreter,
 		std::move(mName),
 		std::move(mFunctions),
 		std::move(mGlobals),
-		std::move(mGlobals32),
-		std::move(mGlobals64)
+		std::move(mMemory)
 	};
 }
 
 HostModule::HostModule(
+	Interpreter& i,
 	std::string n,
 	SealedUnorderedMap<std::string, std::unique_ptr<HostFunctionBase>> fs,
-	SealedUnorderedMap<std::string, DeclaredHostGlobal> dg,
-	SealedVector<Global<u32>> g32,
-	SealedVector<Global<u64>> g64
+	SealedUnorderedMap<std::string, HostGlobal> hg,
+	SealedOptional<NamedHostMemory> m
 )
-	: mName{ std::move(n) },
-	mFunctions{ std::move(fs) },
-	mGlobals{ std::move(dg) },
-	mGlobals32{ std::move(g32) },
-	mGlobals64{ std::move(g64) }
+	: ModuleBase{ i },
+	mName{ std::move(n) },
+	mHostFunctions{ std::move(fs) },
+	mHostGlobals{ std::move(hg) },
+	mHostMemory{ std::move(m) }
 {
 }
 
 Nullable<Function> HostModule::exportedFunctionByName(const std::string& name) {
-	auto fnd= mFunctions.find(name);
-	if (fnd == mFunctions.end()) {
+	auto fnd= mHostFunctions.find(name);
+	if (fnd == mHostFunctions.end()) {
 		return {};
 	}
 
@@ -672,30 +716,93 @@ Nullable<FunctionTable> HostModule::exportedTableByName(const std::string&)
 	return {};
 }
 
-Nullable<Memory> HostModule::exportedMemoryByName(const std::string&)
+Nullable<Memory> HostModule::exportedMemoryByName(const std::string& name)
 {
+	if (mHostMemory.has_value() && mHostMemory->name == name) {
+		auto instance= mHostMemory->memory.mLinkedInstance;
+		assert(instance.has_value());
+		return instance;
+	}
+
 	return {};
 }
 
 std::optional<ResolvedGlobal> HostModule::exportedGlobalByName(const std::string& name)
 {
-	auto fnd = mGlobals.find(name);
-	if (fnd == mGlobals.end()) {
+	auto fnd = mHostGlobals.find(name);
+	if (fnd == mHostGlobals.end()) {
 		return {};
 	}
 
-	auto& declaredGlobal = fnd->second;
-	assert(declaredGlobal.indexInTypedStorageArray().has_value());
-	auto storageIndex = *declaredGlobal.indexInTypedStorageArray();
+	auto& hostGlobal = fnd->second;
+	assert(hostGlobal.mLinkedInstance.has_value());
+	
+	return ResolvedGlobal{ *hostGlobal.mLinkedInstance, hostGlobal.type() };
+}
 
-	auto& globalType = declaredGlobal.type();
-	if (globalType.valType().sizeInBytes() == 4) {
-		assert(storageIndex < mGlobals32.size());
-		return ResolvedGlobal{ mGlobals32[storageIndex.value], globalType };
+NonNull<HostGlobal> WASM::HostModule::hostGlobalByName(const std::string& name)
+{
+	auto fnd = mHostGlobals.find(name);
+	if (fnd != mHostGlobals.end()) {
+		return { fnd->second };
 	}
 
-	assert(storageIndex < mGlobals64.size());
-	return ResolvedGlobal{ mGlobals64[storageIndex.value], globalType };
+	throw LookupError{mName, name, "Unknown host global instance"};
+}
+
+NonNull<HostMemory> WASM::HostModule::hostMemoryByName(const std::string& name)
+{;
+	if (mHostMemory.has_value() && mHostMemory->name == name) {
+		return { mHostMemory->memory };
+	}
+
+	throw LookupError{ mName, name, "Unknown host memory instance" };
+}
+
+void WASM::HostModule::instantiate(ModuleLinker& linker, Nullable<Introspector> introspector)
+{
+	createMemory(linker, introspector);
+	createGlobals(linker, introspector);
+}
+
+void WASM::HostModule::createMemory(ModuleLinker& linker, Nullable<Introspector> introspector)
+{
+	if (mHostMemory.has_value()) {
+		createMemoryBase(mHostMemory->memory, linker, introspector);
+	}
+}
+
+void WASM::HostModule::createGlobals(ModuleLinker& linker, Nullable<Introspector> introspector)
+{
+	TypedVirtualForwardIteratorOf<DeclaredGlobalBase, std::string, HostGlobal> globalsIter{ mHostGlobals };
+	createGlobalsBase(globalsIter, linker, introspector);
+}
+
+void WASM::HostModule::initializeInstance(ModuleLinker&, Nullable<Introspector>)
+{
+	// Set the pointer to the memory instance
+	if (mHostMemory.has_value()) {
+		assert(mMemoryIndex.has_value());
+		assert(*mMemoryIndex < mInterpreter->allMemories.size());
+		auto& memoryInstance = mInterpreter->allMemories[mMemoryIndex->value];
+		mHostMemory->memory.setLinkedInstance(memoryInstance);
+	}
+
+	// Set the pointers to each global
+	for (auto& globalPair : mHostGlobals) {
+		auto& hostGlobal = globalPair.second;
+		auto idx = hostGlobal.indexInTypedStorageArray();
+		assert(idx.has_value());
+
+		if (hostGlobal.valType().sizeInBytes() == 4) {
+			assert(*idx < mInterpreter->allGlobals32.size());
+			hostGlobal.setLinkedInstance(mInterpreter->allGlobals32[idx->value]);
+		}
+		else {
+			assert(*idx < mInterpreter->allGlobals64.size());
+			hostGlobal.setLinkedInstance(mInterpreter->allGlobals64[idx->value]);
+		}
+	}
 }
 
 void ModuleLinker::link()
@@ -716,6 +823,8 @@ void ModuleLinker::link()
 
 	storeLinkedItems();
 
+	initializeHostModules();
+
 	countDependencyItems();
 
 	for (auto& module : interpreter.wasmModules) {
@@ -729,19 +838,9 @@ void ModuleLinker::link()
 	linkDependencies();
 
 	initGlobals();
-	initializeModules();
+	initializeWasmModules();
 	linkMemoryInstances();
 	linkStartFunctions();
-
-	/*assert(modules[0].compilationData->importedFunctions.size() == 1);
-
-	static HostFunction abortFunction = [&](u32, u32, u32, u32) { std::cout << "Abort called"; };
-	abortFunction.setIndex(0);
-	std::cout << "Registered function: ";
-	abortFunction.print(std::cout);
-	std::cout << std::endl;
-
-	modules[0].compilationData->importedFunctions[0].resolvedFunction = abortFunction;*/
 
 	if (introspector.has_value()) {
 		introspector->onModuleLinkingFinished();
@@ -801,6 +900,16 @@ std::vector<Global<u64>>& WASM::ModuleLinker::createGlobals64(u32 numGlobals)
 	return allGlobals64;
 }
 
+sizeType WASM::ModuleLinker::currentNumGlobals32() const
+{
+	return allGlobals32.size();
+}
+
+sizeType WASM::ModuleLinker::currentNumGlobals64() const
+{
+	return allGlobals64.size();
+}
+
 void ModuleLinker::checkModulesLinkStatus() {
 	for (auto& module : interpreter.wasmModules) {
 		if( !module.needsLinking() ) {
@@ -812,6 +921,10 @@ void ModuleLinker::checkModulesLinkStatus() {
 void ModuleLinker::instantiateModules()
 {
 	for (auto& module : interpreter.wasmModules) {
+		module.instantiate(*this, introspector);
+	}
+
+	for (auto& module : interpreter.hostModules) {
 		module.instantiate(*this, introspector);
 	}
 }
@@ -846,9 +959,39 @@ void ModuleLinker::initGlobals()
 			}
 		}
 	}
+
+	// Host modules init their globals here as well to be consistent
+
+	for (auto& module : interpreter.hostModules) {
+		for (auto& globalPair : module.mHostGlobals) {
+			auto& hostGlobal = globalPair.second;
+
+			auto idx = hostGlobal.indexInTypedStorageArray();
+			assert(idx.has_value());
+
+			if (hostGlobal.valType().sizeInBytes() == 4) {
+				interpreter.allGlobals32[idx->value].set((u32)hostGlobal.initValue());
+			}
+			else {
+				interpreter.allGlobals64[idx->value].set(hostGlobal.initValue());
+			}
+		}
+	}
 }
 
-void ModuleLinker::initializeModules()
+void ModuleLinker::initializeHostModules() {
+	// Host modules store pointers to their memory and global instances
+	// which need to be set when the vectors of items are sealed. Therefore,
+	// this method has to run after 'storeLinkedItems' but before 'createDependencyItems'
+	// because dependencies on host modules are resolved immediately,
+	// which requires the host module to be ready at this point.
+
+	for (auto& module : interpreter.hostModules) {
+		module.initializeInstance(*this, introspector);
+	}
+}
+
+void ModuleLinker::initializeWasmModules()
 {
 	// Table elements might reference imported functions and therefore
 	// can only be populated after resolving imports. The same goes for
@@ -942,7 +1085,7 @@ void ModuleLinker::buildDeduplicatedFunctionTypeTable()
 
 	// Set type indices of host modules
 	for (auto& module : interpreter.hostModules) {
-		for (auto& functionPair : module.mFunctions) {
+		for (auto& functionPair : module.mHostFunctions) {
 			auto& function = *functionPair.second;
 			auto interpreterTypeIdx = insertDedupedFunctionType(function.functionType());
 

@@ -15,7 +15,7 @@ namespace WASM {
 	class TableType;
 	class MemoryType;
 	class GlobalType;
-	class DeclaredHostGlobal;
+	class DeclaredGlobalBase;
 	class DeclaredGlobal;
 	class Export;
 	class Element;
@@ -68,8 +68,12 @@ namespace WASM {
 	class HostFunctionBase;
 	template<typename> class HostFunction;
 
+	struct NamedHostMemory;
+	class HostGlobal;
+	class HostMemory;
 	class HostModuleBuilder;
 	class HostModule;
+	class HostModuleHandle;
 
 	class Imported;
 	class FunctionImport;
@@ -91,6 +95,10 @@ namespace WASM {
 
 	template<typename> class ArrayList;
 	template<typename> class SealedVector;
+	template<typename, typename> class SealedUnorderedMap;
+	template<typename> class SealedOptional;
 
 	template<typename> class VirtualSpan;
+	template<typename T> class VirtualForwardIterator;
+	template<typename T> class TypedVirtualForwardIterator;
 }

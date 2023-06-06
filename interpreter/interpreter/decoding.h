@@ -140,9 +140,9 @@ namespace WASM {
 		bool mIsMutable;
 	};
 
-	class DeclaredHostGlobal {
+	class DeclaredGlobalBase {
 	public:
-		DeclaredHostGlobal(GlobalType t)
+		DeclaredGlobalBase(GlobalType t)
 			: mType{ t } {}
 
 		const GlobalType& type() const { return mType; }
@@ -156,17 +156,16 @@ namespace WASM {
 		std::optional<InterpreterGlobalTypedArrayIndex> mIndexInTypedStorageArray;
 	};
 
-	class DeclaredGlobal final : public DeclaredHostGlobal {
+	class DeclaredGlobal final : public DeclaredGlobalBase {
 	public:
 		DeclaredGlobal(GlobalType t, Expression c)
-			: DeclaredHostGlobal{ t }, mInitExpression{ std::move(c) } {}
+			: DeclaredGlobalBase{ t }, mInitExpression{ std::move(c) } {}
 
 		const Expression& initExpression() const { return mInitExpression; }
 		void print(std::ostream& out) const;
 
 	private:
 		Expression mInitExpression;
-
 	};
 
 	struct ExportItem {

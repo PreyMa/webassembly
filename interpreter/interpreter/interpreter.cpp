@@ -62,16 +62,18 @@ void Interpreter::loadModule(std::string path)
 	registerModuleName(module);
 }
 
-void WASM::Interpreter::registerHostModule(HostModule hostModule)
+HostModuleHandle WASM::Interpreter::registerHostModule(HostModuleBuilder& moduleBuilder)
 {
 	// See: loadModule()
 	if (hasLinkedAndCompiled) {
 		throw std::runtime_error{ "Cannot register (host) module after linking step" };
 	}
 
-	hostModules.emplace_back(std::move(hostModule));
+	hostModules.emplace_back(moduleBuilder.toModule(*this));
 	auto& module = hostModules.back();
 	registerModuleName(module);
+
+	return { module };
 }
 
 void Interpreter::compileAndLinkModules()
@@ -890,7 +892,7 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			continue;
 		case BC::MemorySize: {
 			assert(memoryPointer);
-			pushU32(memoryPointer->currentSize());
+			pushU32(memoryPointer->currentSizeInPages());
 			continue;
 		}
 		case BC::MemoryGrow:

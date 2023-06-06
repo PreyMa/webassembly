@@ -1101,7 +1101,7 @@ void TableType::print(std::ostream& out) const
 	mLimits.print(out);
 }
 
-void DeclaredHostGlobal::setIndexInTypedStorageArray(InterpreterGlobalTypedArrayIndex idx)
+void DeclaredGlobalBase::setIndexInTypedStorageArray(InterpreterGlobalTypedArrayIndex idx)
 {
 	assert(!mIndexInTypedStorageArray.has_value());
 	mIndexInTypedStorageArray = idx;
