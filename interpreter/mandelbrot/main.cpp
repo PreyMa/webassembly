@@ -97,9 +97,11 @@ int main() {
 		using WASM::f64, WASM::i32;
 		WASM::Interpreter interpreter;
 
+		// Add a console logger. This is very noise, but insightfull
 		auto logger = std::make_unique<WASM::ConsoleLogger>( std::cout );
-		//interpreter.attachIntrospector(std::move(logger));
+		interpreter.attachIntrospector(std::move(logger));
 		
+		// Define a host module that provides everything that the wasm module needs
 		WASM::HostModuleBuilder envModuleBuilder{ "env" };
 		envModuleBuilder
 			.defineFunction("Math.log", [&](f64 x) { return std::log(x); })
@@ -113,6 +115,7 @@ int main() {
 
 		interpreter.runStartFunctions();
 
+		// Run the function and measure the time
 		auto startTime = std::chrono::high_resolution_clock::now();
 
 		auto updateFunction= interpreter.functionByName("release", "update");
