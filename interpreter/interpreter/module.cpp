@@ -137,7 +137,7 @@ i32 FunctionTable::grow(i32 increase, Nullable<Function> item)
 		table.insert(table.end(), increase, item);
 		return oldSize;
 	}
-	catch (std::bad_alloc& e) {
+	catch (std::bad_alloc&) {
 		return -1;
 	}
 }
@@ -213,7 +213,7 @@ i32 Memory::grow(i32 pageCountIncrease)
 		mData.insert(mData.end(), byteSizeIncrease, 0x00);
 		return oldPageCount;
 	}
-	catch (std::bad_alloc& e) {
+	catch (std::bad_alloc&) {
 		return -1;
 	}
 }
