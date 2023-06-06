@@ -84,10 +84,10 @@ namespace WASM {
 		bool hasLinkedAndCompiled{ false };
 		bool isInterpreting{ false };
 		std::unique_ptr<u32[]> mStackBase;
-		u32* mStackPointer;
-		u32* mFramePointer;
-		Memory* mMemoryPointer;
-		const u8* mInstructionPointer;
+		u32* mStackPointer{ nullptr };
+		u32* mFramePointer{ nullptr };
+		Memory* mMemoryPointer{ nullptr };
+		const u8* mInstructionPointer{ nullptr };
 
 		std::unique_ptr<Introspector> attachedIntrospector;
 	};
