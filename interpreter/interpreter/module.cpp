@@ -503,14 +503,12 @@ std::optional<ResolvedGlobal> Module::globalByIndex(ModuleGlobalIndex idx)
 
 	auto& globalType = declaredGlobal.type();
 	if (globalType.valType().sizeInBytes() == 4) {
-		auto globals32 = mGlobals32.span(mInterpreter->allGlobals32);
-		assert(storageIndex < globals32.size());
-		return ResolvedGlobal{ globals32[storageIndex.value], globalType };
+		assert(storageIndex < mInterpreter->allGlobals32.size());
+		return ResolvedGlobal{ mInterpreter->allGlobals32[storageIndex.value], globalType };
 	}
 
-	auto globals64 = mGlobals64.span(mInterpreter->allGlobals64);
-	assert(storageIndex < globals64.size());
-	return ResolvedGlobal{ globals64[storageIndex.value], globalType };
+	assert(storageIndex < mInterpreter->allGlobals64.size());
+	return ResolvedGlobal{ mInterpreter->allGlobals64[storageIndex.value], globalType };
 }
 
 Nullable<Memory> Module::memoryByIndex(ModuleMemoryIndex idx)
