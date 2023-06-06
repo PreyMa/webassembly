@@ -1331,19 +1331,11 @@ void ModuleCompiler::compileFunction(BytecodeFunction& function)
 	assert(maxStackHeightInBytes % 4 == 0);
 	maxStackHeightInBytes += localsSizeInBytes;
 	function.setMaxStackHeight(maxStackHeightInBytes / 4);
-
-	std::string modName{ module.name() };
-	if (modName.size() > 20) {
-		modName = "..." + modName.substr(modName.size() - 17);
-	}
-
-	auto maybeFunctionName = function.lookupName(module);
-	auto* functionName = maybeFunctionName.has_value() ? maybeFunctionName->c_str() : "<unknown name>";
-	std::cout << "Compiled function " << modName << " :: " << functionName << " (index " << function.moduleIndex() << ")" << " (max stack height " << maxStackHeightInBytes/4 << " slots)" << std::endl;
-	printBytecode(std::cout);
-
-
 	function.setBytecode(std::move(printedBytecode));
+
+	if (introspector.has_value()) {
+		introspector->onCompiledFunction(module, function);
+	}
 }
 
 void ModuleCompiler::pushValue(ValType type)
@@ -2668,11 +2660,16 @@ void ModuleCompiler::compileInstruction(Instruction instruction, u32 instruction
 	throw std::runtime_error{ "Compilation not implemented for instruction" };
 }
 
-void ModuleCompiler::printBytecode(std::ostream& out)
+void ModuleCompiler::printBytecode(std::ostream& out) {
+	printBytecode(out, printedBytecode);
+}
+
+void ModuleCompiler::printBytecode(std::ostream& out, const Buffer& bytecodeBuffer)
 {
 	using std::setw, std::hex, std::dec;
 
-	auto it = printedBytecode.iterator();
+	// FIXME: Allow for const buffer iteration
+	auto it = const_cast<Buffer&>(bytecodeBuffer).iterator();
 	u32 idx = 0;
 	while (it.hasNext()) {
 		auto opCodeAddress = (u64)it.positionPointer();

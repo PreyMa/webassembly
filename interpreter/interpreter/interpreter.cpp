@@ -90,7 +90,7 @@ void Interpreter::compileAndLinkModules()
 
 	for (auto& module : wasmModules) {
 		auto introspector = Nullable<Introspector>::fromPointer(attachedIntrospector);
-		ModuleCompiler compiler{ *this, module };
+		ModuleCompiler compiler{ *this, module, introspector };
 		compiler.compile();
 	}
 

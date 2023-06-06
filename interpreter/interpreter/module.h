@@ -361,10 +361,12 @@ namespace WASM {
 
 	class ModuleCompiler {
 	public:
-		ModuleCompiler(Interpreter& i, Module& m)
-			: interpreter{ i }, module{ m } {}
+		ModuleCompiler(Interpreter& i, Module& m, Nullable<Introspector> in)
+			: interpreter{ i }, module{ m }, introspector{ in } {}
 
 		void compile();
+
+		static void printBytecode(std::ostream&, const Buffer&);
 
 	private:
 		using ValueRecord = std::optional<ValType>;
@@ -470,6 +472,7 @@ namespace WASM {
 
 		Interpreter& interpreter;
 		Module& module;
+		Nullable<Introspector> introspector;
 
 		Buffer printedBytecode;
 

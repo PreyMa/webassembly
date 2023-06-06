@@ -416,6 +416,25 @@ void WASM::DebugLogger::onModuleMemoryInitialized(const Module& module, sizeType
 		" bytes initialized by " << numDataItems << " active data segment items" << std::endl;
 }
 
+void WASM::DebugLogger::onCompiledFunction(const Module& module, const BytecodeFunction& function)
+{
+	if (doLoggingWhenCompiling()) {
+		std::string modName{ module.name() };
+		if (modName.size() > 20) {
+			modName = "..." + modName.substr(modName.size() - 17);
+		}
+
+		auto maybeFunctionName = function.lookupName(module);
+		auto* functionName = maybeFunctionName.has_value() ? maybeFunctionName->c_str() : "<unknown name>";
+
+		auto& stream = outStream();
+		stream << "Compiled function " << modName << " :: " << functionName << " (index " << function.moduleIndex() << ") ";
+		stream << "(max stack height " << function.maxStackHeight() / 4 << " slots)" << std::endl;
+
+		ModuleCompiler::printBytecode(stream, function.bytecode());
+	}
+}
+
 std::ostream& WASM::ConsoleLogger::outStream()
 {
 	return stream;
@@ -434,4 +453,9 @@ bool WASM::ConsoleLogger::doLoggingWhenValidating()
 bool WASM::ConsoleLogger::doLoggingWhenLinking()
 {
 	return logWhenLinking;
+}
+
+bool WASM::ConsoleLogger::doLoggingWhenCompiling()
+{
+	return logWhenCompiling;
 }

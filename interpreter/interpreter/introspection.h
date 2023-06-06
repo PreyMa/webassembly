@@ -55,6 +55,8 @@ namespace WASM {
 		virtual void onRegisteredModule(const ModuleBase&) = 0;
 		virtual void onModuleTableInitialized(const Module&, sizeType, sizeType) = 0;
 		virtual void onModuleMemoryInitialized(const Module&, sizeType, sizeType) = 0;
+
+		virtual void onCompiledFunction(const Module&, const BytecodeFunction&)= 0;
 	};
 
 	class DebugLogger : public Introspector {
@@ -100,11 +102,14 @@ namespace WASM {
 		virtual void onModuleTableInitialized(const Module&, sizeType, sizeType) override;
 		virtual void onModuleMemoryInitialized(const Module&, sizeType, sizeType) override;
 
+		virtual void onCompiledFunction(const Module&, const BytecodeFunction&) override;
+
 	protected:
 		virtual std::ostream& outStream() = 0;
 		virtual bool doLoggingWhenParsing() = 0;
 		virtual bool doLoggingWhenValidating() = 0;
 		virtual bool doLoggingWhenLinking() = 0;
+		virtual bool doLoggingWhenCompiling() = 0;
 
 	private:
 		bool isValidatingImports{ false };
@@ -112,18 +117,20 @@ namespace WASM {
 
 	class ConsoleLogger : public DebugLogger {
 	public:
-		ConsoleLogger(std::ostream& s, bool lp= true, bool lv= true, bool ll= true)
-			: stream{ s }, logWhenParsing{ lp }, logWhenValidating{ lv }, logWhenLinking{ ll } {}
+		ConsoleLogger(std::ostream& s, bool lp= true, bool lv= true, bool ll= true, bool lc= true)
+			: stream{ s }, logWhenParsing{ lp }, logWhenValidating{ lv }, logWhenLinking{ ll }, logWhenCompiling{ lc } {}
 
 	protected:
 		virtual std::ostream& outStream() override;
 		virtual bool doLoggingWhenParsing() override;
 		virtual bool doLoggingWhenValidating() override;
 		virtual bool doLoggingWhenLinking() override;
+		virtual bool doLoggingWhenCompiling() override;
 
 		bool logWhenParsing;
 		bool logWhenValidating;
 		bool logWhenLinking;
+		bool logWhenCompiling;
 		std::ostream& stream;
 	};
 }
