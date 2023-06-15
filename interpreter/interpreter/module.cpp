@@ -2189,6 +2189,10 @@ void ModuleCompiler::compileTableInstruction(Instruction instruction)
 		printU32(interpreterSourceTableIdx.value);
 		break;
 	case IT::TableInit:
+		popValue(ValType::I32);
+		popValue(ValType::I32);
+		popValue(ValType::I32);
+
 		printU32(interpreterElementIdx.value);
 		break;
 	}
