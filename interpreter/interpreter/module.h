@@ -84,15 +84,25 @@ namespace WASM {
 
 		auto& limits() const { return mLimits; }
 		ValType type() const { return mType; }
+		u32 size() const { return (u32)table.size(); }
 
-		i32 grow(i32, Nullable<Function>);
+		i32 grow(u32, Nullable<Function>);
 		void init(const LinkedElement&, u32, u32, u32);
+		void copy(const FunctionTable&, u32, u32, u32);
+		void fill(Nullable<Function>, u32, u32);
 
 		__forceinline Nullable<Function> at(u32 idx) {
 			if (idx > table.size()) {
 				throw std::runtime_error{ "Out of bounds table access" };
 			}
 			return table[idx];
+		}
+
+		__forceinline void set(u32 idx, Nullable<Function> func) {
+			if (idx > table.size()) {
+				throw std::runtime_error{ "Out of bounds table access" };
+			}
+			table[idx]= func;
 		}
 
 	private:
@@ -113,6 +123,7 @@ namespace WASM {
 		}
 
 		sizeType initTableIfActive(std::span<FunctionTable>);
+		void drop();
 
 		ValType referenceType() const { return refType; }
 		const std::vector<Nullable<Function>>& references() const { return mFunctions; }

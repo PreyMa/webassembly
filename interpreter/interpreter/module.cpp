@@ -167,6 +167,63 @@ void FunctionTable::init(const LinkedElement& element, u32 tableOffset, u32 elem
 	}
 }
 
+void WASM::FunctionTable::copy(const FunctionTable& sourceTable, u32 destinationOffset, u32 sourceOffset, u32 numItems)
+{
+	// https://webassembly.github.io/spec/core/exec/instructions.html#xref-syntax-instructions-syntax-instr-table-mathsf-table-copy-x-y
+
+	if ((sizeType)sourceOffset + numItems > sourceTable.table.size()) {
+		throw std::runtime_error{ "Invalid table copy: Source table row access out of bounds" };
+	}
+
+	if ((sizeType)destinationOffset + numItems > table.size()) {
+		throw std::runtime_error{ "Invalid table copy: Destination table row access out of bounds" };
+	}
+
+	if (!numItems) {
+		return;
+	}
+
+	// The source area lies after the destination area, so even if they overlap the relevant areas
+	// are already read before they get overrriden
+	if (destinationOffset <= sourceOffset) {
+		auto readIt = sourceTable.table.begin() + sourceOffset;
+		auto writeIt = table.begin() + destinationOffset;
+
+		for (u32 i = 0; i != numItems; i++) {
+			*(writeIt++) = *(readIt++);
+		}
+
+		return;
+	}
+
+	// The source index lies before the destination area, so if they overlap, the data to read might
+	// already have been clobbered/overridden -> Copy in reverse order to prevent this issue
+	auto readIt = sourceTable.table.begin() + sourceOffset+ numItems - 1;
+	auto writeIt = table.begin() + destinationOffset+ numItems - 1;
+
+	for (u32 i = 0; i != numItems; i++) {
+		*(writeIt--) = *(readIt--);
+	}
+}
+
+void WASM::FunctionTable::fill(Nullable<Function> val, u32 index, u32 numItems)
+{
+	// https://webassembly.github.io/spec/core/exec/instructions.html#xref-syntax-instructions-syntax-instr-table-mathsf-table-fill-x
+
+	if ((sizeType)index + numItems > table.size()) {
+		throw std::runtime_error{ "Invalid table fill: Table row access out of bounds" };
+	}
+
+	if (!numItems) {
+		return;
+	}
+
+	auto writeIt = table.begin() + index;
+	for (u32 i = 0; i != numItems; i++) {
+		*(writeIt++) = val;
+	}
+}
+
 
 sizeType LinkedElement::initTableIfActive(std::span<FunctionTable> tables)
 {
@@ -177,6 +234,13 @@ sizeType LinkedElement::initTableIfActive(std::span<FunctionTable> tables)
 	assert(tableIndex < tables.size());
 	tables[tableIndex.value].init(*this, tableOffset, 0, mFunctions.size());
 	return mFunctions.size();
+}
+
+void WASM::LinkedElement::drop()
+{
+	// Clear the vector and force deallocation
+	mFunctions.clear();
+	mFunctions.shrink_to_fit();
 }
 
 sizeType WASM::LinkedDataItem::initMemoryIfActive(Module& module) const

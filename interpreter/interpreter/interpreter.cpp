@@ -713,20 +713,75 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			continue;
 		}
 		case BC::TableGet:
+			opB = loadOperandU32();
+			opA = popU32();
+			assert(opB < allTables.size());
+			pushU64((u64) allTables[opB].at(opA).pointer());
+			continue;
 		case BC::TableSet:
-		case BC::TableInit:
+			opC = loadOperandU32();
+			opB = popU64();
+			opA = popU32();
+			assert(opC < allTables.size());
+			allTables[opC].set(opA, Nullable<Function>::fromPointer(reinterpret_cast<Function*>(opB)));
+			continue;
+		case BC::TableInit: {
+			auto tableIdx = loadOperandU32();
+			auto elementIdx = loadOperandU32();
+			assert(tableIdx < allTables.size());
+			assert(elementIdx < allElements.size());
+
+			opC = popU32(); // n(um) -> num items to init
+			opB = popU32(); // s(ource) -> element offset
+			opA = popU32(); // d(estination) -> table offset
+			allTables[tableIdx].init(allElements[elementIdx], opA, opB, opC);
+			continue;
+		}
 		case BC::ElementDrop:
-		case BC::TableCopy:
+			opA = loadOperandU32();
+			assert(opA < allElements.size());
+			allElements[opA].drop();
+			continue;
+		case BC::TableCopy: {
+			auto tableIdx = loadOperandU32();
+			auto sourceTableIdx = loadOperandU32();
+			assert(tableIdx < allTables.size());
+			assert(sourceTableIdx < allTables.size());
+
+			opC = popU32(); // n(um) -> num items to copy
+			opB = popU32(); // s(ource) -> source table offset
+			opA = popU32(); // d(estination) -> destination table offset
+			allTables[tableIdx].copy(allTables[sourceTableIdx], opA, opB, opC);
+			continue;
+		}
 		case BC::TableGrow:
+			opC = loadOperandU32();
+			opB = popU32();
+			opA = popU64();
+			assert(opC < allTables.size());
+			pushU32(allTables[opC].grow(opB, Nullable<Function>::fromPointer(reinterpret_cast<Function*>(opA))));
+			continue;
 		case BC::TableSize:
-		case BC::TableFill:
-			break;
+			opA = loadOperandU32();
+			assert(opA < allTables.size());
+			pushU32(allTables[opA].size());
+			continue;
+		case BC::TableFill: {
+			auto tableIdx = loadOperandU32();
+			opC = popU32(); // n(um) -> num items to fill
+			opB = popU64(); // val(ue) -> value to fill with
+			opA = popU32(); // i(ndex) -> destination start index
+
+			assert(tableIdx < allTables.size());
+			auto val = Nullable<Function>::fromPointer(reinterpret_cast<Function*>(opB));
+			allTables[tableIdx].fill(val, opA, opC);
+			continue;
+		}
 		case BC::I32LoadNear:
 			assert(memoryPointer);
 			opB = *(instructionPointer++);
 			opA = popU32();
 			pushU32(*reinterpret_cast<u32*>(memoryPointer->pointer(opB + opA)));
-			// std::cout << "Load [" << opB + opA << "] --> " << stackPointer[-1] << std::endl;
 			continue;
 		case BC::I64LoadNear:
 			assert(memoryPointer);
@@ -832,7 +887,6 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 			opB = popU32();
 			opA = popU32();
 			*reinterpret_cast<u32*>(memoryPointer->pointer(opC + opA)) = (u32) opB;
-			// std::cout << "STORE [" << opC + opA << "] <-- " << opB << std::endl;
 			continue;
 		case BC::I64StoreNear:
 			assert(memoryPointer);
