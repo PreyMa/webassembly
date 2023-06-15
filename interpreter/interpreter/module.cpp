@@ -146,10 +146,6 @@ void FunctionTable::init(const LinkedElement& element, u32 tableOffset, u32 elem
 {
 	// https://webassembly.github.io/spec/core/exec/instructions.html#xref-syntax-instructions-syntax-instr-table-mathsf-table-init-x-y
 
-	if (!numItems) {
-		return;
-	}
-
 	auto& refs = element.references();
 	if (elementOffset + numItems > refs.size()) {
 		throw std::runtime_error{ "Invalid table init: Element access out of bounds" };
@@ -157,6 +153,10 @@ void FunctionTable::init(const LinkedElement& element, u32 tableOffset, u32 elem
 
 	if (tableOffset + numItems > table.size()) {
 		throw std::runtime_error{ "Invalid table init: Table row access out of bounds" };
+	}
+
+	if (!numItems) {
+		return;
 	}
 	
 	auto readIt = refs.begin() + elementOffset;
@@ -222,10 +222,6 @@ void WASM::Memory::init(const LinkedDataItem& dataItem, u32 memoryOffset, u32 it
 {
 	// https://webassembly.github.io/spec/core/exec/instructions.html#xref-syntax-instructions-syntax-instr-memory-mathsf-memory-init-x
 
-	if (!numBytes) {
-		return;
-	}
-
 	auto& bytes = dataItem.dataBytes();
 	if (itemOffset + numBytes > bytes.size()) {
 		throw std::runtime_error{ "Invalid memory init: Data item access out of bounds" };
@@ -233,6 +229,10 @@ void WASM::Memory::init(const LinkedDataItem& dataItem, u32 memoryOffset, u32 it
 
 	if (memoryOffset + numBytes > mData.size()) {
 		throw std::runtime_error{ "Invalid memory init: Memory access out of bounds" };
+	}
+
+	if (!numBytes) {
+		return;
 	}
 
 	memcpy(pointer(memoryOffset), bytes.begin()+ itemOffset, numBytes);
