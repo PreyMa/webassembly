@@ -125,10 +125,10 @@ FunctionTable::FunctionTable(ModuleTableIndex idx, const TableType& tableType)
 	}
 }
 
-i32 FunctionTable::grow(i32 increase, Nullable<Function> item)
+i32 FunctionTable::grow(u32 increase, Nullable<Function> item)
 {
 	auto oldSize = table.size();
-	if (mLimits.max().has_value() && oldSize + increase > *mLimits.max()) {
+	if (mLimits.max().has_value() && (sizeType)oldSize + increase > *mLimits.max()) {
 		return -1;
 	}
 
@@ -147,11 +147,11 @@ void FunctionTable::init(const LinkedElement& element, u32 tableOffset, u32 elem
 	// https://webassembly.github.io/spec/core/exec/instructions.html#xref-syntax-instructions-syntax-instr-table-mathsf-table-init-x-y
 
 	auto& refs = element.references();
-	if (elementOffset + numItems > refs.size()) {
+	if ((sizeType)elementOffset + numItems > refs.size()) {
 		throw std::runtime_error{ "Invalid table init: Element access out of bounds" };
 	}
 
-	if (tableOffset + numItems > table.size()) {
+	if ((sizeType)tableOffset + numItems > table.size()) {
 		throw std::runtime_error{ "Invalid table init: Table row access out of bounds" };
 	}
 
@@ -203,7 +203,7 @@ i32 Memory::grow(i32 pageCountIncrease)
 	auto oldByteSize = mData.size();
 	auto oldPageCount = oldByteSize / PageSize;
 
-	if (mLimits.max().has_value() && oldPageCount + pageCountIncrease > *mLimits.max()) {
+	if (mLimits.max().has_value() && (sizeType)oldPageCount + pageCountIncrease > *mLimits.max()) {
 		return -1;
 	}
 
@@ -223,11 +223,11 @@ void WASM::Memory::init(const LinkedDataItem& dataItem, u32 memoryOffset, u32 it
 	// https://webassembly.github.io/spec/core/exec/instructions.html#xref-syntax-instructions-syntax-instr-memory-mathsf-memory-init-x
 
 	auto& bytes = dataItem.dataBytes();
-	if (itemOffset + numBytes > bytes.size()) {
+	if ((sizeType)itemOffset + numBytes > bytes.size()) {
 		throw std::runtime_error{ "Invalid memory init: Data item access out of bounds" };
 	}
 
-	if (memoryOffset + numBytes > mData.size()) {
+	if ((sizeType)memoryOffset + numBytes > mData.size()) {
 		throw std::runtime_error{ "Invalid memory init: Memory access out of bounds" };
 	}
 
