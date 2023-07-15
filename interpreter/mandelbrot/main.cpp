@@ -97,6 +97,9 @@ int main() {
 		using WASM::f64, WASM::i32;
 		WASM::Interpreter interpreter;
 
+		// Get time to measure parse time (disable logging for usable numbers)
+		auto parseTime = std::chrono::high_resolution_clock::now();
+
 		// Add a console logger. This is very noise, but insightfull
 		auto logger = std::make_unique<WASM::ConsoleLogger>( std::cout );
 		interpreter.attachIntrospector(std::move(logger));
@@ -125,6 +128,7 @@ int main() {
 
 		// Print the function's return value and the run time
 		result.print(std::cout);
+		std::cout << "Load time: " << std::chrono::duration_cast<std::chrono::milliseconds>(startTime - parseTime) << " (read, parse, link, compile)" << std::endl;
 		std::cout << "Run time: " << std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime) << std::endl;
 
 		// Access the memory view of the host module
