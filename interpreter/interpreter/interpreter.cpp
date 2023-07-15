@@ -494,7 +494,7 @@ ValuePack Interpreter::runInterpreterLoop(const BytecodeFunction& function, std:
 	using BC = Bytecode;
 	while (true) {
 		auto bytecode = *(instructionPointer++);
-		std::cout << std::hex << (u64)(instructionPointer- 1) << " Executing bytecode " << std::dec << Bytecode::fromInt(bytecode).name() << std::endl;
+		//std::cout << std::hex << (u64)(instructionPointer- 1) << " Executing bytecode " << std::dec << Bytecode::fromInt(bytecode).name() << std::endl;
 
 		switch (bytecode) {
 		case BC::Unreachable:
